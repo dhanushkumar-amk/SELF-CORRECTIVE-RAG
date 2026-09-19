@@ -2,6 +2,28 @@
 
 A production-grade Retrieval-Augmented Generation system that **detects and self-corrects hallucinations** using a multi-stage verification pipeline powered by LangGraph.
 
+## Quickstart
+
+```powershell
+# Clone and enter the project
+git clone <repo-url>
+cd self-correcting-rag
+
+# One-command setup (installs backend + frontend dependencies)
+.\dev.ps1 setup
+
+# Start both services (in separate terminals)
+.\dev.ps1 backend     # → http://localhost:8000
+.\dev.ps1 frontend    # → http://localhost:3000
+
+# Run tests
+.\dev.ps1 test
+```
+
+> **macOS/Linux users:** A `Makefile` is also provided — use `make setup`, `make backend`, etc.
+
+See [backend/README.md](backend/README.md) and [frontend/README.md](frontend/README.md) for detailed setup instructions.
+
 ---
 
 ## Architecture Overview
@@ -123,7 +145,7 @@ self-correcting-rag/
 - [x] **Phase 1:** Project scaffolding & repo structure
 
 ### Phase 2–5 — Core Infrastructure
-- [ ] **Phase 2:** Backend configuration & environment management
+- [x] **Phase 2:** Backend configuration & environment management
 - [ ] **Phase 3:** Database schema & Pinecone index setup
 - [ ] **Phase 4:** Authentication & API key management
 - [ ] **Phase 5:** Logging, monitoring & error handling framework
