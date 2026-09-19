@@ -7,7 +7,7 @@ This file will be populated in later phases as endpoints are implemented.
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class HealthResponse(BaseModel):
@@ -82,6 +82,24 @@ class Chunk(BaseModel):
     char_start: int = Field(description="Character offset on the starting page's cleaned text")
     char_end: int = Field(description="Character offset on the ending page's cleaned text")
 
+    def to_pinecone_metadata(
+        self,
+        filename: str = "",
+        document_title: str | None = None,
+        max_bytes: int = 40960,
+        auto_truncate: bool = True,
+    ) -> dict[str, Any]:
+        """Convert chunk into a Pinecone-safe metadata dictionary."""
+        from app.ingestion.chunk_metadata import to_pinecone_metadata as _convert
+
+        return _convert(
+            self,
+            filename=filename,
+            document_title=document_title,
+            max_bytes=max_bytes,
+            auto_truncate=auto_truncate,
+        )
+
 
 class ChunkListResponse(BaseModel):
     """Response schema returned by the document chunking endpoint."""
@@ -98,30 +116,118 @@ class DocumentListResponse(BaseModel):
     total: int
 
 
-
 class ChunkMetadata(BaseModel):
-    """Metadata associated with each text chunk stored in Pinecone.
+    """Metadata associated with each text chunk stored in Pinecone vector index.
 
     Pinecone metadata values are strictly restricted to strings, numbers (int/float),
     booleans, or lists of strings. All fields in this model conform directly to these types.
+
+    Design Justifications:
+    - document_id (str): UUID of source document for scoped filtering.
+    - chunk_id (str): Unique chunk UUID4.
+    - chunk_index (int): 0-indexed sequence for reading order reconstruction.
+    - page_number (int): Starting page number (1-indexed) for citation rendering.
+    - page_number_end (int): Ending page number (1-indexed) for page-spanning chunks.
+    - source_text (str): Full chunk text retained directly in metadata for NLI verification
+      (Phase 34) without requiring an external database lookup.
+    - token_count (int): Token measurement for LLM context window budgeting.
+    - filename (str): Original document filename for user citation rendering.
+    - document_title (str): Display title, defaults to filename if unextracted.
+
+    Explicit Exclusion of char_start and char_end:
+    - char_start and char_end were computed in Phase 9 for internal page slice tracking.
+      They are intentionally excluded from Pinecone vector metadata to minimize payload size
+      and optimize search query bandwidth. The unique chunk_id / vector_id allows looking up
+      the complete chunk record with exact character offsets from local disk storage
+      (uploads/{document_id}/chunks.json) whenever character-level text highlighting is required.
     """
 
-    document_id: str
-    chunk_id: str
-    page_number: int
-    source_text: str
-    char_start: int
-    char_end: int
+    document_id: str = Field(description="Unique UUID4 identifier of the parent document")
+    chunk_id: str = Field(description="Unique UUID4 identifier of the chunk")
+    chunk_index: int = Field(default=0, description="Sequential order index of chunk within document")
+    page_number: int = Field(description="Starting page number of the chunk (1-indexed)")
+    page_number_end: int | None = Field(default=None, description="Ending page number of the chunk (1-indexed)")
+    source_text: str = Field(description="Full text content of the chunk for retrieval and verification")
+    token_count: int = Field(default=0, description="Tokenizer token count of the chunk")
+    filename: str = Field(default="", description="Original PDF filename for display in citations")
+    document_title: str = Field(default="", description="Display title of document (defaults to filename)")
 
-    def to_pinecone_metadata(self) -> dict[str, str | int]:
-        """Serialize model to a Pinecone-compatible metadata dictionary.
+    # Internal coordinates (excluded from Pinecone metadata dictionary)
+    char_start: int | None = Field(default=None, exclude=True, description="Internal char start offset")
+    char_end: int | None = Field(default=None, exclude=True, description="Internal char end offset")
 
-        Ensures all keys and values conform strictly to Pinecone's metadata value constraints.
-        """
-        return self.model_dump()
+    @model_validator(mode="after")
+    def populate_defaults(self) -> "ChunkMetadata":
+        if self.page_number_end is None:
+            self.page_number_end = self.page_number
+        if not self.document_title:
+            self.document_title = self.filename or (f"Document {self.document_id}" if self.document_id else "")
+        return self
+
+    def to_pinecone_metadata(
+        self,
+        max_bytes: int = 40960,
+        auto_truncate: bool = True,
+    ) -> dict[str, Any]:
+        """Serialize model to a validated Pinecone-compatible metadata dictionary."""
+        from app.ingestion.chunk_metadata import to_pinecone_metadata as _convert
+
+        return _convert(
+            self,
+            filename=self.filename,
+            document_title=self.document_title,
+            max_bytes=max_bytes,
+            auto_truncate=auto_truncate,
+        )
 
     @classmethod
-    def from_pinecone_metadata(cls, metadata: dict) -> "ChunkMetadata":
-        """Deserialize a Pinecone metadata dictionary back into a validated ChunkMetadata instance."""
-        return cls(**metadata)
+    def from_chunk(
+        cls,
+        chunk: Chunk,
+        filename: str = "",
+        document_title: str | None = None,
+    ) -> "ChunkMetadata":
+        """Create a ChunkMetadata instance from an ingestion Chunk."""
+        return cls(
+            document_id=chunk.document_id,
+            chunk_id=chunk.chunk_id,
+            chunk_index=chunk.chunk_index,
+            page_number=chunk.page_number,
+            page_number_end=chunk.page_number_end,
+            source_text=chunk.text,
+            token_count=chunk.token_count,
+            filename=filename,
+            document_title=document_title or filename,
+            char_start=chunk.char_start,
+            char_end=chunk.char_end,
+        )
+
+    @classmethod
+    def from_pinecone_metadata(cls, metadata: dict[str, Any]) -> "ChunkMetadata":
+        """Deserialize a Pinecone metadata dictionary back into a ChunkMetadata instance."""
+        source_text = str(metadata.get("source_text") or metadata.get("text") or "")
+        doc_id = str(metadata.get("document_id", ""))
+        chunk_id = str(metadata.get("chunk_id", ""))
+        p_start = int(metadata.get("page_number", 1))
+        p_end = int(metadata.get("page_number_end", p_start))
+        idx = int(metadata.get("chunk_index", 0))
+        tokens = int(metadata.get("token_count", 0))
+        fname = str(metadata.get("filename", ""))
+        title = str(metadata.get("document_title", fname))
+        c_start = metadata.get("char_start")
+        c_end = metadata.get("char_end")
+        return cls(
+            document_id=doc_id,
+            chunk_id=chunk_id,
+            chunk_index=idx,
+            page_number=p_start,
+            page_number_end=p_end,
+            source_text=source_text,
+            token_count=tokens,
+            filename=fname,
+            document_title=title,
+            char_start=int(c_start) if c_start is not None else None,
+            char_end=int(c_end) if c_end is not None else None,
+        )
+
 
