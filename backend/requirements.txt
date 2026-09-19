@@ -12,12 +12,10 @@ pinecone-client
 langchain
 langchain-core
 langchain-community
-langchain-pinecone
 langgraph
 
 # ─── Retrieval & Ranking ────────────────────────────────────────────────────
 rank-bm25
-sentence-transformers
 
 # ─── Document Processing ────────────────────────────────────────────────────
 pypdf
@@ -27,3 +25,11 @@ pytest
 pytest-asyncio
 anyio
 httpx
+
+# ─── Deferred: Install in later phases ───────────────────────────────────────
+# These packages have heavy native/numpy dependencies that require specific
+# Python version compatibility. Install when their phase arrives.
+#
+# Phase 10+: sentence-transformers    (embedding generation)
+# Phase 16+: langchain-pinecone       (Pinecone LangChain integration)
+
