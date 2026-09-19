@@ -18,3 +18,12 @@ repos:
           - '--baseline'
           - '.secrets.baseline'
         exclude: ^(frontend/package-lock\.json|backend/requirements-lock\.txt)$
+
+  - repo: local
+    hooks:
+      - id: check-commit-msg
+        name: Conventional Commit Message Validator
+        entry: python .github/scripts/check_commit_msg.py
+        language: system
+        stages: [commit-msg]
+
