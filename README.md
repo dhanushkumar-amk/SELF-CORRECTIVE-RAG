@@ -231,12 +231,14 @@ self-correcting-rag/
 - [x] **Phase 7:** PDF text extraction (pypdf)
 - [x] **Phase 8:** Text cleaning & normalization
 - [x] **Phase 9:** Text chunking strategy (recursive character splitting)
-- [ ] **Phase 10:** Chunk metadata enrichment
+- [x] **Phase 10:** Chunk metadata enrichment & Pinecone constraint validation
 - [ ] **Phase 11:** Embedding generation (sentence-transformers)
 - [ ] **Phase 12:** Pinecone upsert pipeline
 - [ ] **Phase 13:** Batch ingestion with progress tracking
 - [ ] **Phase 14:** Duplicate detection & deduplication
 - [ ] **Phase 15:** Ingestion integration tests
+
+> 📄 **Document Ingestion metadata/chunking groundwork complete** — embedding + upsert next (Phase 11-13)
 
 ### Phase 16–21 — Hybrid Retrieval
 - [ ] **Phase 16:** Dense retrieval (Pinecone vector search)

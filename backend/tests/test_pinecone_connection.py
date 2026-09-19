@@ -31,9 +31,11 @@ class TestChunkMetadata:
         assert d["document_id"] == "doc-123"
         assert d["chunk_id"] == "chunk-456"
         assert d["page_number"] == 1
+        assert d["page_number_end"] == 1
         assert d["source_text"] == "This is a test chunk."
-        assert d["char_start"] == 0
-        assert d["char_end"] == 21
+        # char_start and char_end are explicitly excluded from Pinecone metadata
+        assert "char_start" not in d
+        assert "char_end" not in d
         # Confirm all types strictly conform to Pinecone metadata constraints:
         # string, number (int/float), boolean, or list of strings
         for key, val in d.items():
