@@ -2,27 +2,152 @@
 
 A production-grade Retrieval-Augmented Generation system that **detects and self-corrects hallucinations** using a multi-stage verification pipeline powered by LangGraph.
 
-## Quickstart
+## Quickstart (Local Dev)
+
+### Prerequisites
+
+- **Python 3.10+** (developed with Python 3.14.7)
+- **Node.js 18+** (developed with Node 24.20.0)
+- **npm 9+**
+- **Git**
+
+### 1. One-Command Setup & Run (Windows PowerShell)
 
 ```powershell
-# Clone and enter the project
+# Clone the repository
 git clone <repo-url>
 cd self-correcting-rag
 
-# One-command setup (installs backend + frontend dependencies)
+# Set up both backend (.venv + deps) and frontend (npm install)
 .\dev.ps1 setup
 
-# Start both services (in separate terminals)
-.\dev.ps1 backend     # → http://localhost:8000
-.\dev.ps1 frontend    # → http://localhost:3000
+# Configure environment variables
+Copy-Item backend\.env.example backend\.env
+# Note: In early dev phases, REQUIRE_API_KEYS=false is preset so you can run without API keys
 
-# Run tests
+# Start backend dev server (runs at http://localhost:8000)
+.\dev.ps1 backend
+
+# In a separate terminal, start frontend dev server (runs at http://localhost:3000)
+.\dev.ps1 frontend
+
+# Run backend test suite
 .\dev.ps1 test
 ```
 
-> **macOS/Linux users:** A `Makefile` is also provided — use `make setup`, `make backend`, etc.
+### 2. Manual Step-by-Step Setup
 
-See [backend/README.md](backend/README.md) and [frontend/README.md](frontend/README.md) for detailed setup instructions.
+#### Backend Setup
+
+```bash
+cd backend
+
+# Create and activate virtual environment
+python -m venv .venv
+# Windows PowerShell:
+.venv\Scripts\Activate.ps1
+# Windows cmd:
+.venv\Scripts\activate.bat
+# macOS/Linux:
+source .venv/bin/activate
+
+# Upgrade pip & install dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Set up environment variables
+cp .env.example .env
+
+# Run tests
+pytest tests/ -v
+
+# Start development server
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+Verify backend: `curl http://127.0.0.1:8000/health` → `{"status":"ok"}`.
+
+#### Frontend Setup
+
+```bash
+cd frontend
+
+# Install dependencies cleanly
+npm install
+
+# Set up environment variables (optional, defaults to http://localhost:8000)
+cp .env.local.example .env.local
+
+# Run lint and production build verification
+npm run lint
+npm run build
+
+# Start development server
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+> **macOS/Linux users:** A `Makefile` is also provided — run `make setup`, `make backend`, `make frontend`, and `make test`.
+
+---
+
+## Quickstart (Docker)
+
+To run the entire system (FastAPI backend + Next.js frontend) in isolated Docker containers:
+
+### Prerequisites
+- Docker Engine & Docker Compose (Docker Desktop on Windows/macOS)
+
+### Launch Services
+
+```bash
+# Build and start all services in the background
+docker-compose up --build -d
+
+# Check running status
+docker-compose ps
+
+# View live container logs
+docker-compose logs -f
+
+# Shut down services and clean up networks
+docker-compose down
+```
+
+Services will be accessible at:
+- **Backend API:** [http://localhost:8000](http://localhost:8000) (Docs: [http://localhost:8000/docs](http://localhost:8000/docs))
+- **Frontend App:** [http://localhost:3000](http://localhost:3000)
+
+---
+
+## Environment Variables Reference
+
+### Backend Variables (`backend/.env`)
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `REQUIRE_API_KEYS` | No | `true` | When `false`, skips fail-fast API key checks (used for local scaffolding / CI) |
+| `OPENAI_API_KEY` | Conditional* | `None` | OpenAI API key for generation / embeddings |
+| `GROQ_API_KEY` | Conditional* | `None` | Groq API key for low-latency Llama-3 generation |
+| `GEMINI_API_KEY` | Conditional* | `None` | Google Gemini API key |
+| `PINECONE_API_KEY` | Yes (in prod) | `None` | Pinecone vector database API key |
+| `PINECONE_INDEX_NAME` | No | `rag-hallucination-detection` | Target Pinecone vector index name |
+| `PINECONE_ENVIRONMENT` | No | `us-east-1` | Pinecone cloud region/environment |
+| `ENVIRONMENT` | No | `development` | Deployment environment: `development`, `staging`, `production`, `test` |
+| `DEBUG` | No | `false` | Enable verbose debug logging |
+| `API_V1_PREFIX` | No | `/api/v1` | URL prefix for REST API version 1 |
+| `CORS_ORIGINS` | No | `http://localhost:3000` | Comma-separated list of allowed CORS origins |
+| `LANGCHAIN_TRACING_V2` | No | `false` | Set to `true` to enable LangSmith telemetry and state-graph tracing |
+| `LANGCHAIN_API_KEY` | Optional | `None` | LangSmith API key (required if tracing is enabled) |
+| `LANGCHAIN_PROJECT` | No | `self-correcting-rag` | LangSmith project name to log traces under |
+| `LANGCHAIN_ENDPOINT` | No | `https://api.smith.langchain.com` | LangSmith API endpoint |
+
+*\*At least one LLM API key (`OPENAI_API_KEY`, `GROQ_API_KEY`, or `GEMINI_API_KEY`) is required in production when `REQUIRE_API_KEYS=true`.*
+
+### Frontend Variables (`frontend/.env.local`)
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `NEXT_PUBLIC_API_URL` | No | `http://localhost:8000` | Backend API base URL accessible from browser client |
 
 ---
 
@@ -62,59 +187,6 @@ See [backend/README.md](backend/README.md) and [frontend/README.md](frontend/REA
 | Verification  | NLI-based hallucination detection              |
 | LLMs          | Google Gemini / Groq                           |
 
-## Quick Start
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- npm
-- Git
-
-### Backend
-
-```bash
-cd backend
-
-# Create and activate a virtual environment
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Set up environment variables
-cp .env.example .env
-# Edit .env with your API keys
-
-# Start the development server
-uvicorn app.main:app --reload
-```
-
-Server runs at **http://localhost:8000** — verify with `curl http://localhost:8000/health`.
-
-### Frontend
-
-```bash
-cd frontend
-
-# Install dependencies
-npm install
-
-# Start the development server
-npm run dev
-```
-
-App runs at **http://localhost:3000**.
-
-### Docker (both services)
-
-```bash
-docker-compose up --build
-```
 
 ## Project Structure
 
