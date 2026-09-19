@@ -139,6 +139,8 @@ Services will be accessible at:
 | `LANGCHAIN_API_KEY` | Optional | `None` | LangSmith API key (required if tracing is enabled) |
 | `LANGCHAIN_PROJECT` | No | `self-correcting-rag` | LangSmith project name to log traces under |
 | `LANGCHAIN_ENDPOINT` | No | `https://api.smith.langchain.com` | LangSmith API endpoint |
+| `UPLOAD_DIR` | No | `uploads` | Local directory for raw PDF uploads and document registry |
+| `MAX_UPLOAD_SIZE_MB` | No | `20` | Maximum allowed file upload size in megabytes |
 
 *\*At least one LLM API key (`GEMINI_API_KEY` or `GROQ_API_KEY`) is required in production when `REQUIRE_API_KEYS=true`.*
 
@@ -225,7 +227,7 @@ self-correcting-rag/
 
 
 ### Phase 6–15 — Document Ingestion Pipeline
-- [ ] **Phase 6:** PDF upload endpoint
+- [x] **Phase 6:** PDF upload endpoint
 - [ ] **Phase 7:** PDF text extraction (pypdf)
 - [ ] **Phase 8:** Text chunking strategy (recursive character splitting)
 - [ ] **Phase 9:** Chunk metadata enrichment

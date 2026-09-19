@@ -20,6 +20,12 @@ pip-log.txt
 pip-delete-this-directory.txt
 
 # ===========================
+# Uploads / Document Storage
+# ===========================
+uploads/
+backend/uploads/
+
+# ===========================
 # Environment / Secrets
 # ===========================
 .env
