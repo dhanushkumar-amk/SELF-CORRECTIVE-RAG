@@ -4,13 +4,52 @@ Pydantic schemas for request/response models.
 This file will be populated in later phases as endpoints are implemented.
 """
 
-from pydantic import BaseModel
+from enum import Enum
+
+from pydantic import BaseModel, Field
 
 
 class HealthResponse(BaseModel):
     """Response schema for the health check endpoint."""
 
     status: str
+
+
+class DocumentStatus(str, Enum):
+    """Lifecycle status of an ingested document."""
+
+    UPLOADED = "uploaded"
+    PROCESSING = "processing"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class DocumentUploadResponse(BaseModel):
+    """Response schema returned after a successful document upload."""
+
+    document_id: str = Field(description="Unique UUID4 identifier for the document")
+    filename: str = Field(description="Original sanitized filename")
+    status: DocumentStatus = Field(default=DocumentStatus.UPLOADED)
+    size_bytes: int = Field(description="File size in bytes")
+
+
+class DocumentMetadata(BaseModel):
+    """Metadata schema representing an uploaded document record in the registry."""
+
+    document_id: str
+    filename: str
+    upload_timestamp: str
+    size_bytes: int
+    status: DocumentStatus = DocumentStatus.UPLOADED
+    file_path: str | None = None
+
+
+class DocumentListResponse(BaseModel):
+    """Response schema for listing all registered documents."""
+
+    documents: list[DocumentMetadata]
+    total: int
+
 
 
 class ChunkMetadata(BaseModel):

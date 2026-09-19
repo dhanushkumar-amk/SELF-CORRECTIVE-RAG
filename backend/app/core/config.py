@@ -66,6 +66,10 @@ class Settings(BaseSettings):
         "http://127.0.0.1:3000",
     ]
 
+    # ── Document Storage & Ingestion (Phase 6+) ───────────────────────────
+    UPLOAD_DIR: str = "uploads"
+    MAX_UPLOAD_SIZE_MB: int = 20
+
     # ── Vector DB: Pinecone (Required for Phase 3+) ────────────────────────
     # Sign up at https://app.pinecone.io (Free Starter tier)
     PINECONE_API_KEY: str = ""
@@ -91,7 +95,7 @@ class Settings(BaseSettings):
     REQUIRE_API_KEYS: bool = True
 
     model_config = {
-        "env_file": ".env",
+        "env_file": (".env", "backend/.env"),
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
         "extra": "ignore",
@@ -178,6 +182,11 @@ class Settings(BaseSettings):
             )
 
         return self
+
+    @property
+    def max_upload_size_bytes(self) -> int:
+        """Return maximum allowed upload size in bytes."""
+        return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
     @property
     def langsmith_enabled(self) -> bool:

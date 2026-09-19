@@ -51,8 +51,10 @@ app.add_middleware(
 # Routers
 # ---------------------------------------------------------------------------
 app.include_router(health.router, tags=["health"])
-app.include_router(ingest.router, prefix="/ingest", tags=["ingestion"])
+app.include_router(ingest.router, prefix="/api/ingest", tags=["ingestion"])
+app.include_router(ingest.router, prefix="/ingest", tags=["ingestion"], include_in_schema=False)
 app.include_router(query.router, prefix="/query", tags=["query"])
 app.include_router(debug.router, prefix="/debug", tags=["debug"])
+
 
 
