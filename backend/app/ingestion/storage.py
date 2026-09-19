@@ -209,9 +209,59 @@ class DocumentRegistry:
         )
         return extracted_file
 
+    def save_raw_and_cleaned_pages(
+        self,
+        document_id: str,
+        raw_pages: list[PageText],
+        clean_pages: list[PageText],
+    ) -> tuple[Path, Path, Path]:
+        """Save extracted_raw.json, extracted_clean.json, and canonical extracted.json.
+
+        During development, preserving both versions enables direct comparison and auditing
+        to verify that cleaning never damages citation-critical text.
+        """
+        doc_dir = self.upload_dir / document_id
+        doc_dir.mkdir(parents=True, exist_ok=True)
+
+        raw_file = doc_dir / "extracted_raw.json"
+        clean_file = doc_dir / "extracted_clean.json"
+        main_file = doc_dir / "extracted.json"
+
+        raw_serialized = [p.model_dump() for p in raw_pages]
+        clean_serialized = [p.model_dump() for p in clean_pages]
+
+        # 1. Write raw extracted pages
+        raw_file.write_text(json.dumps(raw_serialized, indent=2), encoding="utf-8")
+
+        # 2. Write cleaned extracted pages
+        clean_file.write_text(json.dumps(clean_serialized, indent=2), encoding="utf-8")
+
+        # 3. Write canonical extracted.json with atomic replace
+        temp_file = doc_dir / f"extracted_{os.getpid()}_{threading.get_ident()}.tmp"
+        try:
+            temp_file.write_text(json.dumps(clean_serialized, indent=2), encoding="utf-8")
+            temp_file.replace(main_file)
+        except Exception:
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except OSError:
+                    pass
+            raise
+
+        logger.info(
+            "Stored raw (%d pages) and cleaned (%d pages) text for doc '%s'",
+            len(raw_pages),
+            len(clean_pages),
+            document_id,
+        )
+        return raw_file, clean_file, main_file
+
     def get_extracted_pages(self, document_id: str) -> list[PageText] | None:
-        """Load extracted per-page text from uploads/{document_id}/extracted.json."""
+        """Load extracted per-page text from uploads/{document_id}/extracted.json (or clean fallback)."""
         extracted_file = self.upload_dir / document_id / "extracted.json"
+        if not extracted_file.exists():
+            extracted_file = self.upload_dir / document_id / "extracted_clean.json"
         if not extracted_file.exists():
             return None
         try:
@@ -220,6 +270,19 @@ class DocumentRegistry:
             return [PageText(**p) for p in raw_pages]
         except Exception as exc:
             logger.error("Failed to read %s: %s", extracted_file, exc)
+            return None
+
+    def get_raw_extracted_pages(self, document_id: str) -> list[PageText] | None:
+        """Load raw uncleaned per-page text from uploads/{document_id}/extracted_raw.json."""
+        raw_file = self.upload_dir / document_id / "extracted_raw.json"
+        if not raw_file.exists():
+            return None
+        try:
+            content = raw_file.read_text(encoding="utf-8")
+            raw_pages = json.loads(content)
+            return [PageText(**p) for p in raw_pages]
+        except Exception as exc:
+            logger.error("Failed to read %s: %s", raw_file, exc)
             return None
 
 
