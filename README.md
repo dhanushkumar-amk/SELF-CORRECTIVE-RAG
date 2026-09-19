@@ -230,7 +230,7 @@ self-correcting-rag/
 - [x] **Phase 6:** PDF upload endpoint
 - [x] **Phase 7:** PDF text extraction (pypdf)
 - [x] **Phase 8:** Text cleaning & normalization
-- [ ] **Phase 9:** Text chunking strategy (recursive character splitting)
+- [x] **Phase 9:** Text chunking strategy (recursive character splitting)
 - [ ] **Phase 10:** Chunk metadata enrichment
 - [ ] **Phase 11:** Embedding generation (sentence-transformers)
 - [ ] **Phase 12:** Pinecone upsert pipeline

@@ -13,6 +13,7 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.ingestion.chunker import chunk_document
 from app.ingestion.pdf_extractor import (
     PDFExtractionError,
     extract_raw_pages,
@@ -21,6 +22,8 @@ from app.ingestion.pdf_extractor import (
 from app.ingestion.storage import get_document_registry, sanitize_filename
 from app.ingestion.text_cleaner import clean_document_pages
 from app.models.schemas import (
+    Chunk,
+    ChunkListResponse,
     DocumentExtractionResponse,
     DocumentListResponse,
     DocumentMetadata,
@@ -324,4 +327,110 @@ async def get_document_pages(document_id: str) -> list[PageText]:
             ),
         )
     return pages
+
+
+@router.post(
+    "/{document_id}/chunk",
+    response_model=ChunkListResponse,
+    summary="Split document text into semantic chunks with page tracking",
+)
+@router.post(
+    "/documents/{document_id}/chunk",
+    response_model=ChunkListResponse,
+    include_in_schema=False,
+)
+async def chunk_document_endpoint(document_id: str) -> ChunkListResponse:
+    """Split cleaned extracted text into token-bounded, overlapping chunks with position tracking.
+
+    - Splits text into ~500 token chunks with ~50 token overlap using recursive separators.
+    - Preserves exact page numbers (including multi-page spanning: page_number -> page_number_end).
+    - Preserves exact character offsets for source citation grounding.
+    - Merges tiny trailing chunks (< 20 tokens) into neighboring chunks.
+    - Saves output to `uploads/{document_id}/chunks.json` and updates document metadata.
+    """
+    registry = get_document_registry()
+    doc = registry.get_document(document_id)
+    if not doc:
+        logger.warning("Chunking requested for nonexistent document ID: %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found.",
+        )
+
+    pages = registry.get_extracted_pages(document_id)
+    if not pages:
+        logger.warning(
+            "Chunking requested for document %s before text extraction.", document_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Document '{document_id}' has not been extracted or has no text. "
+                f"Please run POST /api/ingest/{document_id}/extract first."
+            ),
+        )
+
+    # 1. Run recursive chunking with page and character tracking
+    chunks = chunk_document(document_id=document_id, pages=pages)
+
+    # 2. Persist chunks to uploads/{document_id}/chunks.json
+    try:
+        registry.save_chunks(document_id, chunks)
+    except Exception as exc:
+        logger.error("Failed to save chunks.json for doc %s: %s", document_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist chunks to disk storage.",
+        ) from exc
+
+    # 3. Update document registry metadata with chunk_count
+    registry.update_document_metadata(document_id, chunk_count=len(chunks))
+
+    logger.info(
+        "Successfully chunked document %s into %d chunks.",
+        document_id,
+        len(chunks),
+    )
+    return ChunkListResponse(
+        document_id=document_id,
+        chunk_count=len(chunks),
+        chunks=chunks,
+    )
+
+
+@router.get(
+    "/{document_id}/chunks",
+    response_model=ChunkListResponse,
+    summary="Get all generated chunks for a document",
+)
+@router.get(
+    "/documents/{document_id}/chunks",
+    response_model=ChunkListResponse,
+    include_in_schema=False,
+)
+async def get_document_chunks_endpoint(document_id: str) -> ChunkListResponse:
+    """Retrieve the generated chunks for a document from storage."""
+    registry = get_document_registry()
+    doc = registry.get_document(document_id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found.",
+        )
+
+    chunks = registry.get_chunks(document_id)
+    if chunks is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No chunks found for document '{document_id}'. "
+                f"Run POST /api/ingest/{document_id}/chunk first."
+            ),
+        )
+    return ChunkListResponse(
+        document_id=document_id,
+        chunk_count=len(chunks),
+        chunks=chunks,
+    )
+
 
