@@ -13,8 +13,13 @@ from pathlib import Path
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.ingestion.pdf_extractor import PDFExtractionError, extract_text_by_page
+from app.ingestion.pdf_extractor import (
+    PDFExtractionError,
+    extract_raw_pages,
+    extract_text_by_page,
+)
 from app.ingestion.storage import get_document_registry, sanitize_filename
+from app.ingestion.text_cleaner import clean_document_pages
 from app.models.schemas import (
     DocumentExtractionResponse,
     DocumentListResponse,
@@ -214,9 +219,9 @@ async def extract_document(document_id: str) -> DocumentExtractionResponse:
             pages=[],
         )
 
-    # 3. Perform text extraction with edge case handling
+    # 3. Perform text extraction and cleaning with edge case handling
     try:
-        pages = extract_text_by_page(pdf_path)
+        raw_pages = extract_raw_pages(pdf_path)
     except PDFExtractionError as exc:
         failure_msg = exc.message
         logger.warning("Extraction failed for doc %s: %s", document_id, failure_msg)
@@ -230,6 +235,7 @@ async def extract_document(document_id: str) -> DocumentExtractionResponse:
             status=DocumentStatus.FAILED,
             failure_reason=failure_msg,
             pages=[],
+            cleaning_reports=[],
         )
     except Exception as exc:
         logger.error("Unexpected failure extracting doc %s: %s", document_id, exc)
@@ -244,21 +250,25 @@ async def extract_document(document_id: str) -> DocumentExtractionResponse:
             status=DocumentStatus.FAILED,
             failure_reason=failure_msg,
             pages=[],
+            cleaning_reports=[],
         )
 
-    # 4. Save extracted per-page results to disk
+    # 4. Clean and normalize extracted text
+    clean_pages, cleaning_reports = clean_document_pages(raw_pages)
+
+    # 5. Save raw and cleaned per-page results to disk
     try:
-        registry.save_extracted_pages(document_id, pages)
+        registry.save_raw_and_cleaned_pages(document_id, raw_pages, clean_pages)
     except Exception as exc:
-        logger.error("Failed to write extracted.json for doc %s: %s", document_id, exc)
+        logger.error("Failed to write extracted files for doc %s: %s", document_id, exc)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to persist extracted text to storage.",
         ) from exc
 
-    # 5. Mark ready and record page/char counts
-    total_chars = sum(p.char_count for p in pages)
-    page_count = len(pages)
+    # 6. Mark ready and record page/char counts
+    total_chars = sum(p.char_count for p in clean_pages)
+    page_count = len(clean_pages)
     registry.update_document_metadata(
         document_id,
         status=DocumentStatus.READY,
@@ -268,7 +278,7 @@ async def extract_document(document_id: str) -> DocumentExtractionResponse:
     )
 
     logger.info(
-        "Document %s extraction completed: %d pages, %d chars.",
+        "Document %s extraction and cleaning completed: %d pages, %d chars.",
         document_id,
         page_count,
         total_chars,
@@ -279,7 +289,8 @@ async def extract_document(document_id: str) -> DocumentExtractionResponse:
         page_count=page_count,
         total_char_count=total_chars,
         failure_reason=None,
-        pages=pages,
+        pages=clean_pages,
+        cleaning_reports=cleaning_reports,
     )
 
 

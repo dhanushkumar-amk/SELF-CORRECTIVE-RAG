@@ -5,6 +5,7 @@ This file will be populated in later phases as endpoints are implemented.
 """
 
 from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -64,6 +65,7 @@ class DocumentExtractionResponse(BaseModel):
     page_count: int | None = None
     total_char_count: int | None = None
     pages: list[PageText] = Field(default_factory=list)
+    cleaning_reports: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class DocumentListResponse(BaseModel):

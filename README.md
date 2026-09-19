@@ -229,13 +229,13 @@ self-correcting-rag/
 ### Phase 6–15 — Document Ingestion Pipeline
 - [x] **Phase 6:** PDF upload endpoint
 - [x] **Phase 7:** PDF text extraction (pypdf)
-- [ ] **Phase 8:** Text chunking strategy (recursive character splitting)
-- [ ] **Phase 9:** Chunk metadata enrichment
-- [ ] **Phase 10:** Embedding generation (sentence-transformers)
-- [ ] **Phase 11:** Pinecone upsert pipeline
-- [ ] **Phase 12:** Batch ingestion with progress tracking
-- [ ] **Phase 13:** Duplicate detection & deduplication
-- [ ] **Phase 14:** Ingestion error handling & retry logic
+- [x] **Phase 8:** Text cleaning & normalization
+- [ ] **Phase 9:** Text chunking strategy (recursive character splitting)
+- [ ] **Phase 10:** Chunk metadata enrichment
+- [ ] **Phase 11:** Embedding generation (sentence-transformers)
+- [ ] **Phase 12:** Pinecone upsert pipeline
+- [ ] **Phase 13:** Batch ingestion with progress tracking
+- [ ] **Phase 14:** Duplicate detection & deduplication
 - [ ] **Phase 15:** Ingestion integration tests
 
 ### Phase 16–21 — Hybrid Retrieval
