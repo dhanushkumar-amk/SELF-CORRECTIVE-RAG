@@ -21,7 +21,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.models.schemas import DocumentMetadata, DocumentStatus, PageText
+from app.models.schemas import Chunk, DocumentMetadata, DocumentStatus, PageText
 
 logger = get_logger(__name__)
 
@@ -283,6 +283,46 @@ class DocumentRegistry:
             return [PageText(**p) for p in raw_pages]
         except Exception as exc:
             logger.error("Failed to read %s: %s", raw_file, exc)
+            return None
+
+    def save_chunks(self, document_id: str, chunks: list[Chunk]) -> Path:
+        """Save chunk list to uploads/{document_id}/chunks.json."""
+        doc_dir = self.upload_dir / document_id
+        doc_dir.mkdir(parents=True, exist_ok=True)
+        chunks_file = doc_dir / "chunks.json"
+
+        serialized = [c.model_dump() for c in chunks]
+        temp_file = doc_dir / f"chunks_{os.getpid()}_{threading.get_ident()}.tmp"
+        try:
+            temp_file.write_text(json.dumps(serialized, indent=2), encoding="utf-8")
+            temp_file.replace(chunks_file)
+        except Exception:
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except OSError:
+                    pass
+            raise
+
+        logger.info(
+            "Saved %d chunks for document '%s' to %s",
+            len(chunks),
+            document_id,
+            chunks_file,
+        )
+        return chunks_file
+
+    def get_chunks(self, document_id: str) -> list[Chunk] | None:
+        """Load chunks from uploads/{document_id}/chunks.json."""
+        chunks_file = self.upload_dir / document_id / "chunks.json"
+        if not chunks_file.exists():
+            return None
+        try:
+            content = chunks_file.read_text(encoding="utf-8")
+            raw_chunks = json.loads(content)
+            return [Chunk(**c) for c in raw_chunks]
+        except Exception as exc:
+            logger.error("Failed to read %s: %s", chunks_file, exc)
             return None
 
 

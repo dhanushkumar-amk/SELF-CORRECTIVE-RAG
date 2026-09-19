@@ -46,6 +46,7 @@ class DocumentMetadata(BaseModel):
     failure_reason: str | None = None
     page_count: int | None = None
     total_char_count: int | None = None
+    chunk_count: int | None = None
 
 
 class PageText(BaseModel):
@@ -66,6 +67,28 @@ class DocumentExtractionResponse(BaseModel):
     total_char_count: int | None = None
     pages: list[PageText] = Field(default_factory=list)
     cleaning_reports: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class Chunk(BaseModel):
+    """A semantic text chunk with exact document, page, and character offset traceability."""
+
+    chunk_id: str = Field(description="Unique UUID4 identifier for the chunk")
+    document_id: str = Field(description="ID of the parent source document")
+    chunk_index: int = Field(description="Sequential order index of chunk within the document")
+    text: str = Field(description="Text content of the chunk")
+    token_count: int = Field(description="Total token count measured by tokenizer")
+    page_number: int = Field(description="Starting page number of the chunk (1-indexed)")
+    page_number_end: int = Field(description="Ending page number of the chunk (1-indexed)")
+    char_start: int = Field(description="Character offset on the starting page's cleaned text")
+    char_end: int = Field(description="Character offset on the ending page's cleaned text")
+
+
+class ChunkListResponse(BaseModel):
+    """Response schema returned by the document chunking endpoint."""
+
+    document_id: str
+    chunk_count: int
+    chunks: list[Chunk]
 
 
 class DocumentListResponse(BaseModel):
