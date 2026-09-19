@@ -9,14 +9,19 @@ from typing import Annotated
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
+from pathlib import Path
+
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.ingestion.pdf_extractor import PDFExtractionError, extract_text_by_page
 from app.ingestion.storage import get_document_registry, sanitize_filename
 from app.models.schemas import (
+    DocumentExtractionResponse,
     DocumentListResponse,
     DocumentMetadata,
     DocumentStatus,
     DocumentUploadResponse,
+    PageText,
 )
 
 logger = get_logger(__name__)
@@ -136,6 +141,11 @@ async def list_documents() -> DocumentListResponse:
     response_model=DocumentMetadata,
     summary="Get document details by ID",
 )
+@router.get(
+    "/{document_id}",
+    response_model=DocumentMetadata,
+    include_in_schema=False,
+)
 async def get_document(document_id: str) -> DocumentMetadata:
     """Retrieve metadata and ingestion status for a specific document ID."""
     registry = get_document_registry()
@@ -147,3 +157,160 @@ async def get_document(document_id: str) -> DocumentMetadata:
             detail=f"Document with ID '{document_id}' not found.",
         )
     return doc
+
+
+@router.post(
+    "/{document_id}/extract",
+    response_model=DocumentExtractionResponse,
+    summary="Extract text by page from an uploaded PDF document",
+)
+@router.post(
+    "/documents/{document_id}/extract",
+    response_model=DocumentExtractionResponse,
+    include_in_schema=False,
+)
+async def extract_document(document_id: str) -> DocumentExtractionResponse:
+    """Trigger PDF text extraction for an uploaded document.
+
+    Updates document status:
+    1. Sets status to 'processing'.
+    2. Runs pypdf extraction, page-number preservation, and running header/footer stripping.
+    3. If successful, writes extracted text to `uploads/{document_id}/extracted.json`
+       and marks status 'ready'.
+    4. If document fails extraction (password protected, scanned/no text, corrupted),
+       marks status 'failed' with a detailed `failure_reason`.
+    """
+    registry = get_document_registry()
+    doc = registry.get_document(document_id)
+    if not doc:
+        logger.warning("Extraction requested for missing document ID: %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found.",
+        )
+
+    # 1. Mark status as processing
+    registry.update_document_metadata(document_id, status=DocumentStatus.PROCESSING)
+
+    # 2. Locate PDF file on disk
+    pdf_path = (
+        Path(doc.file_path)
+        if doc.file_path
+        else registry.upload_dir / document_id / doc.filename
+    )
+
+    if not pdf_path.exists():
+        logger.error("Stored PDF file not found at %s", pdf_path)
+        failure_msg = "PDF file does not exist on disk"
+        registry.update_document_metadata(
+            document_id,
+            status=DocumentStatus.FAILED,
+            failure_reason=failure_msg,
+        )
+        return DocumentExtractionResponse(
+            document_id=document_id,
+            status=DocumentStatus.FAILED,
+            failure_reason=failure_msg,
+            pages=[],
+        )
+
+    # 3. Perform text extraction with edge case handling
+    try:
+        pages = extract_text_by_page(pdf_path)
+    except PDFExtractionError as exc:
+        failure_msg = exc.message
+        logger.warning("Extraction failed for doc %s: %s", document_id, failure_msg)
+        registry.update_document_metadata(
+            document_id,
+            status=DocumentStatus.FAILED,
+            failure_reason=failure_msg,
+        )
+        return DocumentExtractionResponse(
+            document_id=document_id,
+            status=DocumentStatus.FAILED,
+            failure_reason=failure_msg,
+            pages=[],
+        )
+    except Exception as exc:
+        logger.error("Unexpected failure extracting doc %s: %s", document_id, exc)
+        failure_msg = "corrupted or unreadable PDF file"
+        registry.update_document_metadata(
+            document_id,
+            status=DocumentStatus.FAILED,
+            failure_reason=failure_msg,
+        )
+        return DocumentExtractionResponse(
+            document_id=document_id,
+            status=DocumentStatus.FAILED,
+            failure_reason=failure_msg,
+            pages=[],
+        )
+
+    # 4. Save extracted per-page results to disk
+    try:
+        registry.save_extracted_pages(document_id, pages)
+    except Exception as exc:
+        logger.error("Failed to write extracted.json for doc %s: %s", document_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist extracted text to storage.",
+        ) from exc
+
+    # 5. Mark ready and record page/char counts
+    total_chars = sum(p.char_count for p in pages)
+    page_count = len(pages)
+    registry.update_document_metadata(
+        document_id,
+        status=DocumentStatus.READY,
+        page_count=page_count,
+        total_char_count=total_chars,
+        failure_reason=None,
+    )
+
+    logger.info(
+        "Document %s extraction completed: %d pages, %d chars.",
+        document_id,
+        page_count,
+        total_chars,
+    )
+    return DocumentExtractionResponse(
+        document_id=document_id,
+        status=DocumentStatus.READY,
+        page_count=page_count,
+        total_char_count=total_chars,
+        failure_reason=None,
+        pages=pages,
+    )
+
+
+@router.get(
+    "/{document_id}/pages",
+    response_model=list[PageText],
+    summary="Get extracted pages for a document",
+)
+@router.get(
+    "/documents/{document_id}/pages",
+    response_model=list[PageText],
+    include_in_schema=False,
+)
+async def get_document_pages(document_id: str) -> list[PageText]:
+    """Retrieve the extracted per-page text list for an ingested document."""
+    registry = get_document_registry()
+    doc = registry.get_document(document_id)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found.",
+        )
+
+    pages = registry.get_extracted_pages(document_id)
+    if pages is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"No extracted text found for document '{document_id}'. "
+                f"Status is '{doc.status.value}'."
+            ),
+        )
+    return pages
+

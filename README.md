@@ -228,7 +228,7 @@ self-correcting-rag/
 
 ### Phase 6–15 — Document Ingestion Pipeline
 - [x] **Phase 6:** PDF upload endpoint
-- [ ] **Phase 7:** PDF text extraction (pypdf)
+- [x] **Phase 7:** PDF text extraction (pypdf)
 - [ ] **Phase 8:** Text chunking strategy (recursive character splitting)
 - [ ] **Phase 9:** Chunk metadata enrichment
 - [ ] **Phase 10:** Embedding generation (sentence-transformers)

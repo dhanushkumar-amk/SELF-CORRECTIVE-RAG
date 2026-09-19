@@ -21,7 +21,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.models.schemas import DocumentMetadata, DocumentStatus
+from app.models.schemas import DocumentMetadata, DocumentStatus, PageText
 
 logger = get_logger(__name__)
 
@@ -158,17 +158,69 @@ class DocumentRegistry:
             docs.sort(key=lambda d: d.upload_timestamp, reverse=True)
             return docs
 
-    def update_status(
-        self, document_id: str, status: DocumentStatus
+    def update_document_metadata(
+        self, document_id: str, **kwargs: Any
     ) -> DocumentMetadata | None:
-        """Update the processing status of a document."""
+        """Atomically update arbitrary metadata fields on a document record."""
         with _REGISTRY_LOCK:
             current = self._load_registry_unlocked()
             if document_id not in current:
                 return None
-            current[document_id]["status"] = status.value
+            record = current[document_id]
+            for key, val in kwargs.items():
+                if isinstance(val, DocumentStatus):
+                    record[key] = val.value
+                else:
+                    record[key] = val
             self._save_registry_unlocked(current)
-            return DocumentMetadata(**current[document_id])
+            return DocumentMetadata(**record)
+
+    def update_status(
+        self, document_id: str, status: DocumentStatus
+    ) -> DocumentMetadata | None:
+        """Update the processing status of a document."""
+        return self.update_document_metadata(document_id, status=status)
+
+    def save_extracted_pages(
+        self, document_id: str, pages: list[PageText]
+    ) -> Path:
+        """Store extracted per-page text to uploads/{document_id}/extracted.json."""
+        doc_dir = self.upload_dir / document_id
+        doc_dir.mkdir(parents=True, exist_ok=True)
+        extracted_file = doc_dir / "extracted.json"
+
+        serialized = [p.model_dump() for p in pages]
+        temp_file = doc_dir / f"extracted_{os.getpid()}_{threading.get_ident()}.tmp"
+        try:
+            temp_file.write_text(json.dumps(serialized, indent=2), encoding="utf-8")
+            temp_file.replace(extracted_file)
+        except Exception:
+            if temp_file.exists():
+                try:
+                    temp_file.unlink()
+                except OSError:
+                    pass
+            raise
+        logger.info(
+            "Saved extracted text for document '%s' to %s (%d pages)",
+            document_id,
+            extracted_file,
+            len(pages),
+        )
+        return extracted_file
+
+    def get_extracted_pages(self, document_id: str) -> list[PageText] | None:
+        """Load extracted per-page text from uploads/{document_id}/extracted.json."""
+        extracted_file = self.upload_dir / document_id / "extracted.json"
+        if not extracted_file.exists():
+            return None
+        try:
+            content = extracted_file.read_text(encoding="utf-8")
+            raw_pages = json.loads(content)
+            return [PageText(**p) for p in raw_pages]
+        except Exception as exc:
+            logger.error("Failed to read %s: %s", extracted_file, exc)
+            return None
 
 
 _registry_instance: DocumentRegistry | None = None
