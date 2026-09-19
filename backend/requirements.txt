@@ -26,6 +26,10 @@ pytest-asyncio
 anyio
 httpx
 
+# ─── Security & Code Quality ─────────────────────────────────────────────────
+pre-commit
+detect-secrets
+
 # ─── Deferred: Install in later phases ───────────────────────────────────────
 # These packages have heavy native/numpy dependencies that require specific
 # Python version compatibility. Install when their phase arrives.

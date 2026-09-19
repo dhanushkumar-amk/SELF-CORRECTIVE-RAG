@@ -126,14 +126,13 @@ Services will be accessible at:
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `REQUIRE_API_KEYS` | No | `true` | When `false`, skips fail-fast API key checks (used for local scaffolding / CI) |
-| `OPENAI_API_KEY` | Conditional* | `None` | OpenAI API key for generation / embeddings |
-| `GROQ_API_KEY` | Conditional* | `None` | Groq API key for low-latency Llama-3 generation |
-| `GEMINI_API_KEY` | Conditional* | `None` | Google Gemini API key |
-| `PINECONE_API_KEY` | Yes (in prod) | `None` | Pinecone vector database API key |
-| `PINECONE_INDEX_NAME` | No | `rag-hallucination-detection` | Target Pinecone vector index name |
-| `PINECONE_ENVIRONMENT` | No | `us-east-1` | Pinecone cloud region/environment |
+| `PINECONE_API_KEY` | **Yes** (Phase 3+) | `None` | Pinecone vector database API key (`pcsk_...`) |
+| `PINECONE_INDEX_NAME` | **Yes** (Phase 3+) | `self-correcting-rag` | Target Pinecone vector index name |
+| `PINECONE_ENVIRONMENT` | **Yes** (Phase 3+) | `us-east-1` | Pinecone cloud region/environment |
 | `ENVIRONMENT` | No | `development` | Deployment environment: `development`, `staging`, `production`, `test` |
-| `DEBUG` | No | `false` | Enable verbose debug logging |
+| `LOG_LEVEL` | No | `INFO` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| `GEMINI_API_KEY` | Phase 25+ | `None` | Google Gemini API key (for answer generation) |
+| `GROQ_API_KEY` | Phase 25+ | `None` | Groq API key for low-latency Llama-3 generation |
 | `API_V1_PREFIX` | No | `/api/v1` | URL prefix for REST API version 1 |
 | `CORS_ORIGINS` | No | `http://localhost:3000` | Comma-separated list of allowed CORS origins |
 | `LANGCHAIN_TRACING_V2` | No | `false` | Set to `true` to enable LangSmith telemetry and state-graph tracing |
@@ -141,7 +140,7 @@ Services will be accessible at:
 | `LANGCHAIN_PROJECT` | No | `self-correcting-rag` | LangSmith project name to log traces under |
 | `LANGCHAIN_ENDPOINT` | No | `https://api.smith.langchain.com` | LangSmith API endpoint |
 
-*\*At least one LLM API key (`OPENAI_API_KEY`, `GROQ_API_KEY`, or `GEMINI_API_KEY`) is required in production when `REQUIRE_API_KEYS=true`.*
+*\*At least one LLM API key (`GEMINI_API_KEY` or `GROQ_API_KEY`) is required in production when `REQUIRE_API_KEYS=true`.*
 
 ### Frontend Variables (`frontend/.env.local`)
 
@@ -219,7 +218,7 @@ self-correcting-rag/
 ### Phase 2–5 — Core Infrastructure
 - [x] **Phase 2:** Backend configuration & environment management
 - [x] **Phase 3:** Database schema & Pinecone index setup
-- [ ] **Phase 4:** Authentication & API key management
+- [x] **Phase 4:** Authentication & API key management
 - [ ] **Phase 5:** Logging, monitoring & error handling framework
 
 ### Phase 6–15 — Document Ingestion Pipeline

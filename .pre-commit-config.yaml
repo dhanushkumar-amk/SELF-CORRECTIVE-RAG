@@ -1,0 +1,20 @@
+# ── Pre-commit Hooks Configuration ────────────────────────────────────────────
+# Prevents accidental commits of secrets, API keys, and sensitive tokens.
+#
+# Installation:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Manual check:
+#   pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: Detect Secrets (prevent committing API keys)
+        args:
+          - '--baseline'
+          - '.secrets.baseline'
+        exclude: ^(frontend/package-lock\.json|backend/requirements-lock\.txt)$

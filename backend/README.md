@@ -37,38 +37,54 @@ uvicorn app.main:app --reload
 
 The server starts at **http://localhost:8000**.
 
-## Environment Variables
+## Environment Variables & Secret Management
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env` and configure your environment:
 
-| Variable | Required | Description |
-| --- | --- | --- |
-| `PINECONE_API_KEY` | Yes* | Pinecone vector DB API key |
-| `GEMINI_API_KEY` | Yes* (or Groq) | Google Gemini LLM key |
-| `GROQ_API_KEY` | Yes* (or Gemini) | Groq inference key |
-| `PINECONE_ENVIRONMENT` | Yes* | Pinecone environment region |
-| `PINECONE_INDEX_NAME` | Yes* | Pinecone index name |
-| `LANGCHAIN_API_KEY` | No | LangSmith API key (for tracing) |
-| `LANGCHAIN_TRACING_V2` | No | Set `true` to enable LangSmith traces |
-| `REQUIRE_API_KEYS` | No | Set `false` to skip key validation (default: `true`) |
+| Variable | Required Now? | Default | Description |
+| --- | :---: | --- | --- |
+| `PINECONE_API_KEY` | **Yes** (Phase 3+) | `None` | Pinecone API key (`pcsk_...`) |
+| `PINECONE_INDEX_NAME` | **Yes** (Phase 3+) | `self-correcting-rag` | Name of the Pinecone vector index |
+| `PINECONE_ENVIRONMENT` | **Yes** (Phase 3+) | `us-east-1` | Pinecone cloud region (e.g. `us-east-1`) |
+| `ENVIRONMENT` | No | `development` | Runtime environment (`development`, `staging`, `production`, `test`) |
+| `LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) |
+| `REQUIRE_API_KEYS` | No | `true` | When `false`, allows offline dev/CI without real keys |
+| `GEMINI_API_KEY` | Phase 25+ | `None` | Google Gemini API key (for answer generation) |
+| `GROQ_API_KEY` | Phase 25+ | `None` | Groq API key (for fast Llama-3 generation) |
+| `LANGCHAIN_TRACING_V2` | No | `false` | Enable LangSmith telemetry and execution tracing |
+| `LANGCHAIN_API_KEY` | No | `None` | LangSmith API key (required if tracing is enabled) |
+| `LANGCHAIN_PROJECT` | No | `self-correcting-rag` | LangSmith project name |
+| `LANGCHAIN_ENDPOINT` | No | `https://api.smith.langchain.com` | LangSmith API endpoint |
 
-> *Required when `REQUIRE_API_KEYS=true` (production). Set `REQUIRE_API_KEYS=false` during early development phases.
+### Fail-Fast Startup Validation
+The application validates all required configuration upon boot:
+- If required keys are missing, the server **aborts immediately** with clear instructions and direct links to get them.
+- If keys are left as `.env.example` placeholders (e.g. `your-pinecone-api-key-here`), startup is blocked with a helpful prompt.
+- Set `REQUIRE_API_KEYS=false` in `.env` for offline local development or CI unit tests.
 
-### Fail-Fast Validation
+### Secret-Scanning Safeguards (Pre-commit Hook)
+To prevent accidentally committing sensitive keys or API credentials into version control:
+```bash
+# Install pre-commit into your environment
+pip install pre-commit detect-secrets
 
-The app validates required environment variables on startup. If critical keys are
-missing, it will **refuse to start** with a clear error message rather than failing
-later with a cryptic error deep in a retrieval or LLM call.
+# Install the git hook
+pre-commit install
+```
+Any commit containing raw API tokens or high-entropy credentials will be automatically blocked by `detect-secrets`.
+
+### Production Deployment Strategy (Phase 50)
+In local development, settings are read from `backend/.env`. In production environments:
+- Never commit or deploy `.env` files.
+- Inject secrets as native container/system environment variables or pull dynamically from a cloud secret manager (AWS Secrets Manager, GCP Secret Manager, or HashiCorp Vault). Pydantic-settings automatically prioritizes system environment variables over `.env` files.
 
 ### LangSmith Tracing
-
 LangSmith provides observability into the LangGraph self-correction loop:
 step-by-step traces, latency, and token usage. To enable:
 
 1. Sign up at [smith.langchain.com](https://smith.langchain.com/)
 2. Set `LANGCHAIN_API_KEY=your-key` and `LANGCHAIN_TRACING_V2=true` in `.env`
 
-Tracing is optional — the app works identically without it.
 
 ## Pinecone Setup & Configuration
 
