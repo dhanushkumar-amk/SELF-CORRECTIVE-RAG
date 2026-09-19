@@ -42,6 +42,28 @@ class DocumentMetadata(BaseModel):
     size_bytes: int
     status: DocumentStatus = DocumentStatus.UPLOADED
     file_path: str | None = None
+    failure_reason: str | None = None
+    page_count: int | None = None
+    total_char_count: int | None = None
+
+
+class PageText(BaseModel):
+    """Extracted text and character metadata for a single PDF page."""
+
+    page_number: int = Field(description="1-indexed page number within the PDF document")
+    text: str = Field(description="Cleaned, structured extracted text from the page")
+    char_count: int = Field(description="Total number of characters extracted on this page")
+
+
+class DocumentExtractionResponse(BaseModel):
+    """Response schema returned by the document extraction endpoint."""
+
+    document_id: str
+    status: DocumentStatus
+    failure_reason: str | None = None
+    page_count: int | None = None
+    total_char_count: int | None = None
+    pages: list[PageText] = Field(default_factory=list)
 
 
 class DocumentListResponse(BaseModel):
