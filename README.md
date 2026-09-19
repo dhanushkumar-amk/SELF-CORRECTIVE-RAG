@@ -218,7 +218,7 @@ self-correcting-rag/
 
 ### Phase 2–5 — Core Infrastructure
 - [x] **Phase 2:** Backend configuration & environment management
-- [ ] **Phase 3:** Database schema & Pinecone index setup
+- [x] **Phase 3:** Database schema & Pinecone index setup
 - [ ] **Phase 4:** Authentication & API key management
 - [ ] **Phase 5:** Logging, monitoring & error handling framework
 

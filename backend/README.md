@@ -70,11 +70,56 @@ step-by-step traces, latency, and token usage. To enable:
 
 Tracing is optional — the app works identically without it.
 
+## Pinecone Setup & Configuration
+
+This project uses [Pinecone](https://www.pinecone.io/) for high-performance serverless vector search.
+
+### 1. Sign Up & Retrieve API Key
+1. Sign up for a free account at [app.pinecone.io](https://app.pinecone.io/) (Free Starter tier — no credit card required).
+2. Go to **API Keys** in the left sidebar and copy your default API key (starts with `pcsk_...`).
+3. Add it to `backend/.env`:
+   ```bash
+   PINECONE_API_KEY=pcsk_your_actual_key_here
+   PINECONE_ENVIRONMENT=us-east-1
+   PINECONE_INDEX_NAME=self-correcting-rag
+   ```
+
+### 2. Create the Vector Index
+Create an index with the following exact specifications in the Pinecone Console:
+
+| Setting | Value | Rationale |
+|---|---|---|
+| **Index Name** | `self-correcting-rag` | Standardized project index identifier |
+| **Dimensions** | `384` | Matches `sentence-transformers/all-MiniLM-L6-v2` |
+| **Metric** | `cosine` | Optimal metric for normalized dense text embeddings |
+| **Cloud Provider** | `AWS` | Standard serverless cloud provider |
+| **Region** | `us-east-1` | Free Starter tier default region |
+
+#### Embedding Model Decision: `all-MiniLM-L6-v2` (384d) vs `all-mpnet-base-v2` (768d)
+- **Decision:** Locked in **`all-MiniLM-L6-v2` (384 dimensions)**.
+- **Trade-off Analysis:**
+  - `all-MiniLM-L6-v2`: Model size ~80MB, ~5x faster inference, runs seamlessly on local CPUs without GPU requirements. Pinecone vector operations are twice as memory- and latency-efficient at 384 dimensions.
+  - `all-mpnet-base-v2`: Model size ~420MB, 768 dimensions. While offering a ~3–4% higher baseline MTEB score, it introduces notable latency on local execution.
+  - **Why MiniLM is optimal for this architecture:** In our pipeline, dense retrieval is followed by **Cross-Encoder re-ranking (Phase 22)** and **NLI hallucination verification (Phase 30)**. High retrieval recall (top-k=15–25) from MiniLM is more than sufficient; downstream re-ranking provides high precision without sacrificing system throughput.
+
+### 3. Verify Pinecone Connectivity
+Run the test suite to execute the Pinecone smoke test:
+```bash
+pytest tests/test_pinecone_connection.py -v
+```
+*(Tests skip gracefully if `PINECONE_API_KEY` is not yet configured or is a placeholder).*
+
+You can also check index stats via the temporary debug endpoint:
+```bash
+curl http://localhost:8000/debug/pinecone-stats
+```
+
 ## API Endpoints
 
 | Method | Path | Description | Status |
 | --- | --- | --- | --- |
 | GET | `/health` | Health check | ✅ Active |
+| GET | `/debug/pinecone-stats` | Pinecone index statistics (vector count, dimensions) | ✅ Phase 3 Debug |
 | * | `/ingest` | Document ingestion | 🔲 Phase 6 |
 | * | `/query` | RAG query | 🔲 Phase 16 |
 

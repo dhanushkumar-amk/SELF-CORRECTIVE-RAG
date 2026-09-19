@@ -40,8 +40,8 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
 
     # ── Pinecone ─────────────────────────────────────────────────────────
-    PINECONE_ENVIRONMENT: str = ""
-    PINECONE_INDEX_NAME: str = ""
+    PINECONE_ENVIRONMENT: str = "us-east-1"
+    PINECONE_INDEX_NAME: str = "self-correcting-rag"
 
     # ── LangChain / LangSmith ────────────────────────────────────────────
     LANGCHAIN_API_KEY: str = ""
@@ -75,6 +75,8 @@ class Settings(BaseSettings):
 
         if not self.PINECONE_API_KEY:
             missing.append("PINECONE_API_KEY")
+        if not self.PINECONE_INDEX_NAME:
+            missing.append("PINECONE_INDEX_NAME")
         if not self.GEMINI_API_KEY and not self.GROQ_API_KEY:
             missing.append("GEMINI_API_KEY or GROQ_API_KEY (at least one)")
 

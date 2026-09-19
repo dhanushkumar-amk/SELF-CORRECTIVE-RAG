@@ -6,7 +6,7 @@ pydantic-settings
 python-dotenv
 
 # ─── Vector DB ───────────────────────────────────────────────────────────────
-pinecone-client
+pinecone
 
 # ─── LLM / Orchestration ────────────────────────────────────────────────────
 langchain

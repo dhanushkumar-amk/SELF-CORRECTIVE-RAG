@@ -17,6 +17,16 @@ class TestConfigValidation:
                 GEMINI_API_KEY="test-gemini-key",
             )
 
+    def test_missing_pinecone_index_name_raises(self) -> None:
+        """App should refuse to start if PINECONE_INDEX_NAME is empty and validation is on."""
+        with pytest.raises(ValueError, match="PINECONE_INDEX_NAME"):
+            get_settings(
+                REQUIRE_API_KEYS=True,
+                PINECONE_API_KEY="test-pinecone-key",
+                PINECONE_INDEX_NAME="",
+                GEMINI_API_KEY="test-gemini-key",
+            )
+
     def test_missing_all_llm_keys_raises(self) -> None:
         """App should refuse to start if NEITHER Gemini nor Groq key is set."""
         with pytest.raises(ValueError, match="GEMINI_API_KEY or GROQ_API_KEY"):

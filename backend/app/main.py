@@ -11,7 +11,7 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health, ingest, query
+from app.api.routes import debug, health, ingest, query
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -53,4 +53,6 @@ app.add_middleware(
 app.include_router(health.router, tags=["health"])
 app.include_router(ingest.router, prefix="/ingest", tags=["ingestion"])
 app.include_router(query.router, prefix="/query", tags=["query"])
+app.include_router(debug.router, prefix="/debug", tags=["debug"])
+
 

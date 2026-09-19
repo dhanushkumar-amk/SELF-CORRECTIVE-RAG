@@ -26,8 +26,27 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    checkHealth();
-  }, [checkHealth]);
+    let isCancelled = false;
+    fetch(`${API_URL}/health`, { cache: "no-store" })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("Health check failed");
+        return res.json();
+      })
+      .then((data) => {
+        if (!isCancelled) {
+          setStatus(data.status === "ok" ? "connected" : "disconnected");
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) {
+          setStatus("disconnected");
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
 
   const statusColor: Record<BackendStatus, string> = {
     checking: "text-yellow-500",
