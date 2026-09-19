@@ -1,24 +1,29 @@
 # ─── Core ────────────────────────────────────────────────────────────────────
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic==2.10.4
-pydantic-settings==2.7.1
-python-dotenv==1.0.1
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
 
 # ─── Vector DB ───────────────────────────────────────────────────────────────
-pinecone-client==5.0.1
+pinecone-client
 
 # ─── LLM / Orchestration ────────────────────────────────────────────────────
-langgraph==0.2.60
-langchain==0.3.14
-langchain-core==0.3.29
+langchain
+langchain-core
+langchain-community
+langchain-pinecone
+langgraph
 
 # ─── Retrieval & Ranking ────────────────────────────────────────────────────
-rank-bm25==0.2.2
-sentence-transformers==3.3.1
+rank-bm25
+sentence-transformers
+
+# ─── Document Processing ────────────────────────────────────────────────────
+pypdf
 
 # ─── Testing ─────────────────────────────────────────────────────────────────
-pytest==8.3.4
-pytest-asyncio==0.25.0
-anyio==4.8.0
-httpx==0.28.1
+pytest
+pytest-asyncio
+anyio
+httpx
