@@ -401,6 +401,17 @@ class RerankResult(BaseModel):
     relevant_count: int = Field(default=0, description="Number of candidate chunks passing min relevance score threshold")
 
 
+class LLMResponse(BaseModel):
+    """Unified response object returned by the LLM generation provider interface."""
+
+    content: str = Field(description="Generated text output from the LLM provider")
+    provider: str = Field(description="Name of provider serving request ('groq' or 'gemini')")
+    model_name: str = Field(description="Name of specific LLM model executed")
+    latency_ms: float = Field(default=0.0, description="Execution duration in milliseconds")
+    fallback_triggered: bool = Field(default=False, description="Whether fallback mechanism was triggered")
+    error: str | None = Field(default=None, description="Error message if generation failed")
+
+
 
 
 

@@ -81,12 +81,13 @@ class Settings(BaseSettings):
     RERANK_MIN_SCORE: float = -2.0  # Empirical logit threshold for relevance filtering
     RERANK_TOP_N: int = 5
 
-    # ── LLM Providers (Deferred to Phase 25 — Generation) ─────────────────
-    # In Phase 25+, at least one LLM key is required for answer generation
+    # ── LLM Providers (Phase 25 — Generation) ─────────────────────────────
     # Google Gemini: https://ai.google.dev/
     GEMINI_API_KEY: str = ""
+    DEFAULT_GEMINI_MODEL: str = "gemini-1.5-flash"
     # Groq (Llama-3): https://console.groq.com/
     GROQ_API_KEY: str = ""
+    DEFAULT_GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # ── Observability: LangChain / LangSmith (Optional — Debugging) ───────
     # Observability platform for LangGraph traces: https://smith.langchain.com/
