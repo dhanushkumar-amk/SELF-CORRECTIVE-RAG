@@ -35,6 +35,7 @@ from app.models.schemas import (
     DocumentVerificationResponse,
     IngestionResult,
     PageText,
+    calculate_progress_percent,
 )
 
 logger = get_logger(__name__)
@@ -541,10 +542,13 @@ async def get_document_status_endpoint(document_id: str) -> DocumentStatusRespon
             detail=f"Document with ID '{document_id}' not found.",
         )
 
+    progress = calculate_progress_percent(doc.status, doc.current_stage)
     return DocumentStatusResponse(
         document_id=doc.document_id,
+        filename=doc.filename,
         status=doc.status,
         current_stage=doc.current_stage,
+        progress_percent=progress,
         failure_reason=doc.failure_reason,
         retryable=doc.retryable,
         chunk_count=doc.chunk_count,
@@ -552,6 +556,7 @@ async def get_document_status_endpoint(document_id: str) -> DocumentStatusRespon
         page_count=doc.page_count,
         total_tokens=doc.total_tokens,
         total_char_count=doc.total_char_count,
+        uploaded_at=doc.upload_timestamp,
         processing_time_seconds=doc.processing_time_seconds,
         stage_timings=doc.stage_timings,
     )

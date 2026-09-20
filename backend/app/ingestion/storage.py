@@ -21,12 +21,59 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.models.schemas import Chunk, DocumentMetadata, DocumentStatus, PageText
+from app.models.schemas import (
+    Chunk,
+    DocumentMetadata,
+    DocumentStatus,
+    PageText,
+    validate_transition,
+)
 
 logger = get_logger(__name__)
 
 # Re-entrant thread lock for synchronizing registry file reads and atomic writes
 _REGISTRY_LOCK = threading.Lock()
+
+
+def check_registry_consistency(doc: DocumentMetadata) -> tuple[bool, list[str]]:
+    """Audit the logical consistency of a DocumentMetadata record.
+
+    Consistency Rules:
+    1. READY status must NOT have a failure_reason set.
+    2. FAILED status MUST have a non-empty failure_reason set.
+    3. FAILED status MUST have a boolean retryable flag (True or False).
+    4. Non-failed statuses must NOT have a failure_reason set.
+    5. READY status must have non-negative chunk_count and upserted_count if present.
+    6. Page count / total tokens must be non-negative if set.
+
+    Returns:
+        Tuple of (is_consistent: bool, violations: list[str]).
+    """
+    violations: list[str] = []
+    s_val = doc.status.value if isinstance(doc.status, DocumentStatus) else str(doc.status)
+
+    if s_val == "ready":
+        if doc.failure_reason:
+            violations.append(f"READY document has failure_reason='{doc.failure_reason}'")
+        if doc.chunk_count is not None and doc.chunk_count < 0:
+            violations.append(f"READY document has negative chunk_count={doc.chunk_count}")
+        if doc.upserted_count is not None and doc.upserted_count < 0:
+            violations.append(f"READY document has negative upserted_count={doc.upserted_count}")
+    elif s_val == "failed":
+        if not doc.failure_reason or not doc.failure_reason.strip():
+            violations.append("FAILED document missing failure_reason")
+        if doc.retryable is None:
+            violations.append("FAILED document missing retryable boolean flag")
+    else:
+        if doc.failure_reason:
+            violations.append(f"Document in status '{s_val}' has failure_reason='{doc.failure_reason}'")
+
+    if doc.page_count is not None and doc.page_count < 0:
+        violations.append(f"Document has negative page_count={doc.page_count}")
+    if doc.total_tokens is not None and doc.total_tokens < 0:
+        violations.append(f"Document has negative total_tokens={doc.total_tokens}")
+
+    return (len(violations) == 0, violations)
 
 
 def get_upload_dir() -> Path:
@@ -168,6 +215,14 @@ class DocumentRegistry:
             if document_id not in current:
                 return None
             record = current[document_id]
+            if "status" in kwargs and kwargs["status"] is not None:
+                new_status = kwargs["status"]
+                curr_status = record.get("status", "uploaded")
+                if not validate_transition(curr_status, new_status):
+                    err_msg = f"Invalid status transition for doc '{document_id}': '{curr_status}' -> '{new_status}'"
+                    logger.error(err_msg)
+                    raise ValueError(err_msg)
+
             for key, val in kwargs.items():
                 if isinstance(val, DocumentStatus):
                     record[key] = val.value

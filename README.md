@@ -236,9 +236,9 @@ self-correcting-rag/
 - [x] **Phase 12:** Embedding generation pipeline (extract -> clean -> chunk -> embed orchestrator)
 - [x] **Phase 13:** Pinecone upsert pipeline
 - [x] **Phase 14:** Ingestion error handling & retries
-- [ ] **Phase 15:** Ingestion status tracking
+- [x] **Phase 15:** Ingestion status tracking
 
-> 📄 **Document Ingestion core pipeline complete (upload -> extract -> clean -> chunk -> embed -> upsert)** — error handling and status polish next (Phase 14-15)
+> 📄 **Document Ingestion (Phases 6–15) fully complete** — Retrieval Layer next (Phase 16–21)
 
 ### Phase 16–21 — Hybrid Retrieval
 - [ ] **Phase 16:** Dense retrieval (Pinecone vector search)

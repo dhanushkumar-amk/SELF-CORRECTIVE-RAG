@@ -1,0 +1,20 @@
+{
+  "conc_doc": {
+    "document_id": "conc_doc",
+    "filename": "safety.pdf",
+    "upload_timestamp": "2026-09-20T12:36:23.208525+00:00",
+    "size_bytes": 4,
+    "status": "uploaded",
+    "file_path": "C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\scratch\\test_uploads_p15\\conc_test\\conc_doc\\safety.pdf",
+    "failure_reason": null,
+    "retryable": null,
+    "page_count": null,
+    "total_char_count": 1404,
+    "chunk_count": null,
+    "upserted_count": null,
+    "current_stage": "uploaded",
+    "total_tokens": null,
+    "processing_time_seconds": null,
+    "stage_timings": null
+  }
+}

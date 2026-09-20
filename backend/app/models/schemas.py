@@ -17,12 +17,129 @@ class HealthResponse(BaseModel):
 
 
 class DocumentStatus(str, Enum):
-    """Lifecycle status of an ingested document."""
+    """Lifecycle status of an ingested document across pipeline stages."""
 
     UPLOADED = "uploaded"
     PROCESSING = "processing"
+    EXTRACTING = "extracting"
+    CLEANING = "cleaning"
+    CHUNKING = "chunking"
+    EMBEDDING = "embedding"
+    UPSERTING = "upserting"
     READY = "ready"
     FAILED = "failed"
+
+
+# Map of valid status transitions in the document ingestion state machine
+VALID_STATUS_TRANSITIONS: dict[DocumentStatus, set[DocumentStatus]] = {
+    DocumentStatus.UPLOADED: {
+        DocumentStatus.PROCESSING,
+        DocumentStatus.EXTRACTING,
+        DocumentStatus.FAILED,
+    },
+    DocumentStatus.PROCESSING: {
+        DocumentStatus.EXTRACTING,
+        DocumentStatus.CLEANING,
+        DocumentStatus.CHUNKING,
+        DocumentStatus.EMBEDDING,
+        DocumentStatus.UPSERTING,
+        DocumentStatus.READY,
+        DocumentStatus.FAILED,
+    },
+    DocumentStatus.EXTRACTING: {
+        DocumentStatus.CLEANING,
+        DocumentStatus.FAILED,
+    },
+    DocumentStatus.CLEANING: {
+        DocumentStatus.CHUNKING,
+        DocumentStatus.FAILED,
+    },
+    DocumentStatus.CHUNKING: {
+        DocumentStatus.EMBEDDING,
+        DocumentStatus.FAILED,
+    },
+    DocumentStatus.EMBEDDING: {
+        DocumentStatus.UPSERTING,
+        DocumentStatus.FAILED,
+    },
+    DocumentStatus.UPSERTING: {
+        DocumentStatus.READY,
+        DocumentStatus.FAILED,
+    },
+    DocumentStatus.READY: {
+        DocumentStatus.UPLOADED,
+        DocumentStatus.PROCESSING,
+        DocumentStatus.EXTRACTING,
+    },
+    DocumentStatus.FAILED: {
+        DocumentStatus.UPLOADED,
+        DocumentStatus.PROCESSING,
+        DocumentStatus.EXTRACTING,
+    },
+}
+
+
+def validate_transition(current: DocumentStatus | str, target: DocumentStatus | str) -> bool:
+    """Validate whether transitioning from current status to target status is permitted.
+
+    Args:
+        current: Current DocumentStatus enum or string value.
+        target: Target DocumentStatus enum or string value to transition into.
+
+    Returns:
+        True if transition is valid or idempotent, False otherwise.
+    """
+    try:
+        curr_enum = DocumentStatus(current)
+        targ_enum = DocumentStatus(target)
+    except ValueError:
+        return False
+
+    if curr_enum == targ_enum:
+        return True
+
+    valid_targets = VALID_STATUS_TRANSITIONS.get(curr_enum, set())
+    return targ_enum in valid_targets
+
+
+STAGE_PROGRESS_PERCENT: dict[str, int] = {
+    "uploaded": 0,
+    "extracting": 15,
+    "cleaning": 30,
+    "chunking": 45,
+    "embedding": 70,
+    "upserting": 90,
+    "ready": 100,
+}
+
+
+def calculate_progress_percent(
+    status: DocumentStatus | str, current_stage: str | None = None
+) -> int:
+    """Calculate approximate percentage completion (0-100%) for UI progress display.
+
+    Progress Mapping:
+    - UPLOADED: 0%
+    - EXTRACTING: 15%
+    - CLEANING: 30%
+    - CHUNKING: 45%
+    - EMBEDDING: 70%
+    - UPSERTING: 90%
+    - READY: 100%
+    - FAILED: Retains progress percentage of stage at which processing halted.
+    """
+    s_val = status.value if isinstance(status, DocumentStatus) else str(status).lower()
+    stage_val = (current_stage or "").lower()
+
+    if s_val == "ready":
+        return 100
+    if stage_val in STAGE_PROGRESS_PERCENT:
+        return STAGE_PROGRESS_PERCENT[stage_val]
+    if s_val in STAGE_PROGRESS_PERCENT:
+        return STAGE_PROGRESS_PERCENT[s_val]
+    if s_val == "processing":
+        return 15
+    return 0
 
 
 class DocumentUploadResponse(BaseModel):
@@ -237,8 +354,10 @@ class DocumentStatusResponse(BaseModel):
     """Response schema for polling document ingestion status and stage progress."""
 
     document_id: str = Field(description="Unique UUID4 identifier for the document")
+    filename: str = Field(default="", description="Original PDF filename")
     status: DocumentStatus = Field(description="Current status (uploaded, processing, ready, failed)")
     current_stage: str | None = Field(default=None, description="Current stage (extracting, cleaning, chunking, embedding, upserting, ready, failed)")
+    progress_percent: int = Field(default=0, description="Approximate processing percentage (0-100%) for UI progress display")
     failure_reason: str | None = Field(default=None, description="Detailed failure message if status is failed")
     retryable: bool | None = Field(default=None, description="Whether a failed document is eligible for retry")
     chunk_count: int | None = Field(default=None, description="Total chunks if chunking completed")
@@ -246,6 +365,7 @@ class DocumentStatusResponse(BaseModel):
     page_count: int | None = Field(default=None, description="Total extracted pages if extraction completed")
     total_tokens: int | None = Field(default=None, description="Total token count if chunking completed")
     total_char_count: int | None = Field(default=None, description="Total extracted character count")
+    uploaded_at: str = Field(default="", description="ISO-8601 upload timestamp")
     processing_time_seconds: float | None = Field(default=None, description="Elapsed processing time")
     stage_timings: dict[str, float] | None = Field(default=None, description="Breakdown of timing per stage")
 
