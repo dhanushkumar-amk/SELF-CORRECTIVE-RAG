@@ -22,7 +22,7 @@ from unittest.mock import MagicMock, patch
 from app.ingestion.chunk_metadata import create_vector_id
 from app.ingestion.pipeline import run_ingestion_pipeline
 from app.ingestion.storage import DocumentRegistry
-from app.models.schemas import DocumentStatus, PageText, RetrievalResult
+from app.models.schemas import Chunk, DocumentStatus, PageText, RetrievalResult
 from app.retrieval import (
     BM25Index,
     build_bm25_index,
@@ -65,7 +65,6 @@ def test_e2e_full_retrieval_pipeline(mock_registry: DocumentRegistry):
         result = run_ingestion_pipeline(doc_id, registry=mock_registry, verify_upsert=False)
         assert result.status == DocumentStatus.READY
 
-        # Retrieve real ingested vector ID (doc_id::chunk_id) to return in mocked Pinecone queries
         doc_chunks = mock_registry.get_chunks(doc_id)
         assert len(doc_chunks) >= 1
         c1 = doc_chunks[0]
@@ -95,36 +94,53 @@ def test_e2e_full_retrieval_pipeline(mock_registry: DocumentRegistry):
 
 def test_multi_document_retrieval_and_scoping(mock_registry: DocumentRegistry):
     """Test retrieval across multiple documents and document_id metadata filtering isolation."""
-    # Document 1: Physics / Quantum
     doc1_id = "doc_quantum"
-    p1 = mock_registry.upload_dir / doc1_id / "quantum.pdf"
-    p1.parent.mkdir(parents=True, exist_ok=True)
-    p1.write_bytes(b"%PDF-quantum")
-    mock_registry.save_document(doc1_id, "quantum.pdf", b"%PDF-quantum")
-
-    # Document 2: Chemistry / Organic
     doc2_id = "doc_chemistry"
-    p2 = mock_registry.upload_dir / doc2_id / "chemistry.pdf"
-    p2.parent.mkdir(parents=True, exist_ok=True)
-    p2.write_bytes(b"%PDF-chemistry")
+
+    mock_registry.save_document(doc1_id, "quantum.pdf", b"%PDF-quantum")
     mock_registry.save_document(doc2_id, "chemistry.pdf", b"%PDF-chemistry")
 
-    pages1 = [PageText(page_number=1, text="Quantum superposition and entanglement govern qubit state coherence.", char_count=70)]
-    pages2 = [PageText(page_number=1, text="Covalent electron pair sharing forms stable organic hydrocarbon chains.", char_count=70)]
+    chunk1 = Chunk(
+        chunk_id="chunk_q1",
+        document_id=doc1_id,
+        chunk_index=0,
+        text="Quantum superposition and entanglement govern qubit state coherence.",
+        token_count=14,
+        page_number=1,
+        page_number_end=1,
+        char_start=0,
+        char_end=68,
+    )
+    chunk2 = Chunk(
+        chunk_id="chunk_c1",
+        document_id=doc2_id,
+        chunk_index=0,
+        text="Covalent electron pair sharing forms stable organic hydrocarbon chains.",
+        token_count=13,
+        page_number=1,
+        page_number_end=1,
+        char_start=0,
+        char_end=71,
+    )
+
+    mock_registry.save_chunks(doc1_id, [chunk1])
+    mock_registry.save_chunks(doc2_id, [chunk2])
+
+    mock_registry.update_document_metadata(doc1_id, status=DocumentStatus.PROCESSING)
+    mock_registry.update_document_metadata(doc1_id, status=DocumentStatus.READY)
+
+    mock_registry.update_document_metadata(doc2_id, status=DocumentStatus.PROCESSING)
+    mock_registry.update_document_metadata(doc2_id, status=DocumentStatus.READY)
+
+    c1_vid = create_vector_id(doc1_id, chunk1.chunk_id)
+    c2_vid = create_vector_id(doc2_id, chunk2.chunk_id)
 
     mock_pc = MagicMock(spec=PineconeClient)
-    mock_pc.delete_vectors.return_value = None
-    mock_pc.upsert_vectors.return_value = {"upserted_count": 1, "successful_ids": ["v1"], "failed_ids": []}
 
     def mock_query_vectors(vector, top_k=5, filter=None, include_metadata=True, namespace=""):
-        c1 = mock_registry.get_chunks(doc1_id)[0]
-        c2 = mock_registry.get_chunks(doc2_id)[0]
-        c1_vid = create_vector_id(doc1_id, c1.chunk_id)
-        c2_vid = create_vector_id(doc2_id, c2.chunk_id)
-
         all_matches = [
-            {"id": c1_vid, "score": 0.95, "metadata": c1.to_pinecone_metadata(filename="quantum.pdf")},
-            {"id": c2_vid, "score": 0.85, "metadata": c2.to_pinecone_metadata(filename="chemistry.pdf")},
+            {"id": c1_vid, "score": 0.95, "metadata": chunk1.to_pinecone_metadata(filename="quantum.pdf")},
+            {"id": c2_vid, "score": 0.85, "metadata": chunk2.to_pinecone_metadata(filename="chemistry.pdf")},
         ]
         if filter and "document_id" in filter:
             target_doc = filter["document_id"]
@@ -133,20 +149,14 @@ def test_multi_document_retrieval_and_scoping(mock_registry: DocumentRegistry):
 
     mock_pc.query_vectors.side_effect = mock_query_vectors
 
-    with patch("app.ingestion.pipeline.extract_raw_pages", side_effect=[pages1, pages2]), \
-         patch("app.ingestion.pipeline.get_pinecone_client", return_value=mock_pc), \
-         patch("app.retrieval.dense_search.embed_query", return_value=[0.1] * 384):
+    bm25_idx = build_bm25_index(registry=mock_registry)
+    assert bm25_idx.chunk_count == 2
 
-        run_ingestion_pipeline(doc1_id, registry=mock_registry, verify_upsert=False)
-        run_ingestion_pipeline(doc2_id, registry=mock_registry, verify_upsert=False)
-
-        bm25_idx = build_bm25_index(registry=mock_registry)
-        assert bm25_idx.chunk_count == 2
-
+    with patch("app.retrieval.dense_search.embed_query", return_value=[0.1] * 384):
         # 1. Unscoped query returns top match from relevant doc (doc1 ranks #1 in dense & sparse)
         unscoped = hybrid_search("quantum qubit superposition", top_k=5, pinecone_client=mock_pc, bm25_index=bm25_idx)
         assert len(unscoped) >= 1
-        assert unscoped[0].metadata["document_id"] == doc1_id
+        assert unscoped[0].metadata["document_id"] == doc1_id, f"Expected {doc1_id}, got {unscoped[0]}"
 
         # 2. Scoped query to doc1_id MUST exclude doc2_id chunks
         scoped_doc1 = hybrid_search(
@@ -284,11 +294,11 @@ def test_retrieval_spot_check_and_latency_baseline(mock_registry: DocumentRegist
     mock_registry.save_document(doc_id, "rag_guide.pdf", b"%PDF-rag")
 
     pages = [
-        PageText(page_number=1, text="The embedding generator uses sentence-transformers all-MiniLM-L6-v2 producing 384 dimensional vectors for semantic indexing.", char_count=140),
-        PageText(page_number=2, text="BM25 search uses rank_bm25 BM25Okapi for keyword matching over tokenized document terms.", char_count=110),
-        PageText(page_number=3, text="Reciprocal Rank Fusion calculates chunk relevance using k=60 rank decay constant across retrieval lists.", char_count=120),
-        PageText(page_number=4, text="Pinecone manages cloud vector storage and cosine similarity vector queries.", char_count=90),
-        PageText(page_number=5, text="LangGraph state machine executes self-correction when NLI verification detects hallucinated claims.", char_count=130),
+        PageText(page_number=1, text="The embedding generator uses sentence-transformers all-MiniLM-L6-v2 producing 384 dimensional vectors for semantic indexing. " * 10, char_count=1400),
+        PageText(page_number=2, text="BM25 search uses rank_bm25 BM25Okapi for keyword matching over tokenized document terms. " * 10, char_count=1100),
+        PageText(page_number=3, text="Reciprocal Rank Fusion calculates chunk relevance using k=60 rank decay constant across retrieval lists. " * 10, char_count=1200),
+        PageText(page_number=4, text="Pinecone manages cloud vector storage and cosine similarity vector queries. " * 10, char_count=900),
+        PageText(page_number=5, text="LangGraph state machine executes self-correction when NLI verification detects hallucinated claims. " * 10, char_count=1300),
     ]
 
     mock_pc = MagicMock(spec=PineconeClient)
@@ -302,15 +312,15 @@ def test_retrieval_spot_check_and_latency_baseline(mock_registry: DocumentRegist
         run_ingestion_pipeline(doc_id, registry=mock_registry, verify_upsert=False)
         bm25_idx = build_bm25_index(registry=mock_registry)
         chunks = mock_registry.get_chunks(doc_id)
+        assert len(chunks) >= 1
 
         def mock_dense_query(vector, top_k=5, filter=None, include_metadata=True, namespace=""):
-            return [
-                {"id": create_vector_id(doc_id, chunks[0].chunk_id), "score": 0.95, "metadata": chunks[0].to_pinecone_metadata(filename="rag_guide.pdf")},
-                {"id": create_vector_id(doc_id, chunks[1].chunk_id), "score": 0.88, "metadata": chunks[1].to_pinecone_metadata(filename="rag_guide.pdf")},
-                {"id": create_vector_id(doc_id, chunks[2].chunk_id), "score": 0.82, "metadata": chunks[2].to_pinecone_metadata(filename="rag_guide.pdf")},
-                {"id": create_vector_id(doc_id, chunks[3].chunk_id), "score": 0.79, "metadata": chunks[3].to_pinecone_metadata(filename="rag_guide.pdf")},
-                {"id": create_vector_id(doc_id, chunks[4].chunk_id), "score": 0.75, "metadata": chunks[4].to_pinecone_metadata(filename="rag_guide.pdf")},
-            ][:top_k]
+            matches = []
+            for idx, c in enumerate(chunks):
+                vid = create_vector_id(doc_id, c.chunk_id)
+                score = round(0.95 - (idx * 0.05), 2)
+                matches.append({"id": vid, "score": score, "metadata": c.to_pinecone_metadata(filename="rag_guide.pdf")})
+            return matches[:top_k]
 
         mock_pc.query_vectors.side_effect = mock_dense_query
 
