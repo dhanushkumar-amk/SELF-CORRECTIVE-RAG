@@ -17,6 +17,7 @@ langgraph
 
 # ─── Retrieval & Ranking ────────────────────────────────────────────────────
 rank-bm25
+sentence-transformers
 
 # ─── Document Processing ────────────────────────────────────────────────────
 pypdf
@@ -36,6 +37,6 @@ detect-secrets
 # These packages have heavy native/numpy dependencies that require specific
 # Python version compatibility. Install when their phase arrives.
 #
-# Phase 10+: sentence-transformers    (embedding generation)
 # Phase 16+: langchain-pinecone       (Pinecone LangChain integration)
+
 
