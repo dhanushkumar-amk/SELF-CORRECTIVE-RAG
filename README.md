@@ -234,11 +234,11 @@ self-correcting-rag/
 - [x] **Phase 10:** Chunk metadata enrichment & Pinecone constraint validation
 - [x] **Phase 11:** Embedding generation (sentence-transformers)
 - [x] **Phase 12:** Embedding generation pipeline (extract -> clean -> chunk -> embed orchestrator)
-- [ ] **Phase 13:** Pinecone upsert pipeline
-- [ ] **Phase 14:** Duplicate detection & deduplication
-- [ ] **Phase 15:** Ingestion integration tests
+- [x] **Phase 13:** Pinecone upsert pipeline
+- [ ] **Phase 14:** Ingestion error handling & retries
+- [ ] **Phase 15:** Ingestion status tracking
 
-> 📄 **Document Ingestion embedding pipeline complete** — Pinecone upsert next (Phase 13)
+> 📄 **Document Ingestion core pipeline complete (upload -> extract -> clean -> chunk -> embed -> upsert)** — error handling and status polish next (Phase 14-15)
 
 ### Phase 16–21 — Hybrid Retrieval
 - [ ] **Phase 16:** Dense retrieval (Pinecone vector search)
