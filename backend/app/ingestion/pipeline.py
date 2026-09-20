@@ -51,11 +51,10 @@ from app.models.schemas import (
     DocumentVerificationResponse,
     IngestionResult,
 )
-from app.retrieval import (
+from app.retrieval.pinecone_client import (
     PineconeBatchUpsertError,
     PineconeClient,
     get_pinecone_client,
-    rebuild_bm25_index,
 )
 
 logger = get_logger(__name__)
@@ -451,6 +450,7 @@ def _execute_pipeline_stages(
 
     # Rebuild in-memory BM25 index to immediately incorporate new chunks
     try:
+        from app.retrieval.bm25_index import rebuild_bm25_index
         rebuild_bm25_index(reg)
     except Exception as bm25_exc:
         logger.warning(

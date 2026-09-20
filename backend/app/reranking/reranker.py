@@ -67,10 +67,11 @@ def get_cross_encoder_model(
             if _reranker_instance is None:
                 logger.info("Loading local cross-encoder reranker model '%s'...", model_name)
                 model = CrossEncoder(model_name)
+                max_len = getattr(model, "max_seq_length", getattr(model, "max_length", 512))
                 logger.info(
-                    "Cross-encoder model '%s' loaded successfully (max_length: %d).",
+                    "Cross-encoder model '%s' loaded successfully (max_seq_length: %d).",
                     model_name,
-                    getattr(model, "max_length", 512),
+                    max_len,
                 )
                 _reranker_instance = model
     return _reranker_instance
@@ -79,9 +80,11 @@ def get_cross_encoder_model(
 def get_reranker_info() -> dict[str, Any]:
     """Return runtime metadata and configuration of active cross-encoder reranker."""
     model = get_cross_encoder_model()
+    max_len = getattr(model, "max_seq_length", getattr(model, "max_length", 512))
     return {
         "model_name": settings.RERANKER_MODEL_NAME,
-        "max_length": getattr(model, "max_length", 512),
+        "max_length": max_len,
+        "max_seq_length": max_len,
         "tokenizer_type": type(model.tokenizer).__name__ if hasattr(model, "tokenizer") else "Unknown",
     }
 

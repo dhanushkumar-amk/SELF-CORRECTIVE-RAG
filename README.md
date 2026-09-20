@@ -251,8 +251,8 @@ self-correcting-rag/
 > 🔍 **Retrieval Layer (Phases 16–21) complete — Reranking next (Phase 22–24)**
 
 ### Phase 22–24 — Re-ranking
-- [ ] **Phase 22:** Cross-encoder re-ranker setup
-- [ ] **Phase 23:** Re-ranking pipeline integration
+- [x] **Phase 22:** Local cross-encoder re-ranker setup (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
+- [x] **Phase 23:** Re-ranking pipeline integration & threshold selection (`select_relevant_chunks()` & `RERANK_MIN_SCORE`)
 - [ ] **Phase 24:** Re-ranking evaluation & tests
 
 ### Phase 25–29 — Answer Generation
