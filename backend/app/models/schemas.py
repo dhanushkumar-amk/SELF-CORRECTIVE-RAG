@@ -431,6 +431,28 @@ class GeneratedAnswer(BaseModel):
     latency_ms: float = Field(default=0.0, description="Generation latency in milliseconds")
 
 
+class ParseError(BaseModel):
+    """Details of a failed LLM JSON parsing or validation attempt."""
+
+    raw_text: str = Field(description="Original raw text response from LLM provider")
+    error_type: str = Field(description="Classification of error (empty_response, json_decode_error, contradictory_response, invalid_schema)")
+    error_message: str = Field(description="Detailed error message describing parsing failure")
+    is_recoverable: bool = Field(default=False, description="True if output could be recovered via sanitization, False if unrecoverable and requires LLM retry")
+
+
+class GenerationError(Exception):
+    """Custom exception raised when answer generation fails across all retry and fallback attempts."""
+
+    def __init__(
+        self,
+        message: str = "Unable to generate a reliable answer, please try rephrasing your question.",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.details = details or {}
+
+
 
 
 
