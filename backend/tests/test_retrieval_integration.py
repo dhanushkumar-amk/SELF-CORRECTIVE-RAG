@@ -96,9 +96,11 @@ def test_multi_document_retrieval_and_scoping(mock_registry: DocumentRegistry):
     """Test retrieval across multiple documents and document_id metadata filtering isolation."""
     doc1_id = "doc_quantum"
     doc2_id = "doc_chemistry"
+    doc3_id = "doc_astronomy"
 
     mock_registry.save_document(doc1_id, "quantum.pdf", b"%PDF-quantum")
     mock_registry.save_document(doc2_id, "chemistry.pdf", b"%PDF-chemistry")
+    mock_registry.save_document(doc3_id, "astronomy.pdf", b"%PDF-astronomy")
 
     chunk1 = Chunk(
         chunk_id="chunk_q1",
@@ -122,18 +124,29 @@ def test_multi_document_retrieval_and_scoping(mock_registry: DocumentRegistry):
         char_start=0,
         char_end=71,
     )
+    chunk3 = Chunk(
+        chunk_id="chunk_a1",
+        document_id=doc3_id,
+        chunk_index=0,
+        text="Stellar nucleosynthesis fuses hydrogen nuclei into helium inside stellar cores.",
+        token_count=12,
+        page_number=1,
+        page_number_end=1,
+        char_start=0,
+        char_end=79,
+    )
 
     mock_registry.save_chunks(doc1_id, [chunk1])
     mock_registry.save_chunks(doc2_id, [chunk2])
+    mock_registry.save_chunks(doc3_id, [chunk3])
 
-    mock_registry.update_document_metadata(doc1_id, status=DocumentStatus.PROCESSING)
-    mock_registry.update_document_metadata(doc1_id, status=DocumentStatus.READY)
-
-    mock_registry.update_document_metadata(doc2_id, status=DocumentStatus.PROCESSING)
-    mock_registry.update_document_metadata(doc2_id, status=DocumentStatus.READY)
+    for d_id in (doc1_id, doc2_id, doc3_id):
+        mock_registry.update_document_metadata(d_id, status=DocumentStatus.PROCESSING)
+        mock_registry.update_document_metadata(d_id, status=DocumentStatus.READY)
 
     c1_vid = create_vector_id(doc1_id, chunk1.chunk_id)
     c2_vid = create_vector_id(doc2_id, chunk2.chunk_id)
+    c3_vid = create_vector_id(doc3_id, chunk3.chunk_id)
 
     mock_pc = MagicMock(spec=PineconeClient)
 
@@ -141,6 +154,7 @@ def test_multi_document_retrieval_and_scoping(mock_registry: DocumentRegistry):
         all_matches = [
             {"id": c1_vid, "score": 0.95, "metadata": chunk1.to_pinecone_metadata(filename="quantum.pdf")},
             {"id": c2_vid, "score": 0.85, "metadata": chunk2.to_pinecone_metadata(filename="chemistry.pdf")},
+            {"id": c3_vid, "score": 0.75, "metadata": chunk3.to_pinecone_metadata(filename="astronomy.pdf")},
         ]
         if filter and "document_id" in filter:
             target_doc = filter["document_id"]
@@ -150,7 +164,7 @@ def test_multi_document_retrieval_and_scoping(mock_registry: DocumentRegistry):
     mock_pc.query_vectors.side_effect = mock_query_vectors
 
     bm25_idx = build_bm25_index(registry=mock_registry)
-    assert bm25_idx.chunk_count == 2
+    assert bm25_idx.chunk_count == 3
 
     with patch("app.retrieval.dense_search.embed_query", return_value=[0.1] * 384):
         # 1. Unscoped query returns top match from relevant doc (doc1 ranks #1 in dense & sparse)
@@ -158,7 +172,7 @@ def test_multi_document_retrieval_and_scoping(mock_registry: DocumentRegistry):
         assert len(unscoped) >= 1
         assert unscoped[0].metadata["document_id"] == doc1_id, f"Expected {doc1_id}, got {unscoped[0]}"
 
-        # 2. Scoped query to doc1_id MUST exclude doc2_id chunks
+        # 2. Scoped query to doc1_id MUST exclude other document chunks
         scoped_doc1 = hybrid_search(
             "hydrocarbon covalent",
             top_k=5,
@@ -171,7 +185,7 @@ def test_multi_document_retrieval_and_scoping(mock_registry: DocumentRegistry):
             assert res.metadata["document_id"] == doc1_id
             assert res.metadata["document_id"] != doc2_id
 
-        # 3. Scoped query to doc2_id MUST exclude doc1_id chunks
+        # 3. Scoped query to doc2_id MUST exclude other document chunks
         scoped_doc2 = hybrid_search(
             "quantum qubit",
             top_k=5,

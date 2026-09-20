@@ -76,7 +76,10 @@ class Settings(BaseSettings):
     PINECONE_INDEX_NAME: str = "self-correcting-rag"
     PINECONE_ENVIRONMENT: str = "us-east-1"
     PINECONE_TIMEOUT_SECONDS: int = 30
-    EMBEDDING_TIMEOUT_WARN_SECONDS: float = 300.0  # 5 minutes
+    # ── Reranking (Phase 22–24) ───────────────────────────────────────────
+    RERANKER_MODEL_NAME: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    RERANK_MIN_SCORE: float = -2.0  # Empirical logit threshold for relevance filtering
+    RERANK_TOP_N: int = 5
 
     # ── LLM Providers (Deferred to Phase 25 — Generation) ─────────────────
     # In Phase 25+, at least one LLM key is required for answer generation

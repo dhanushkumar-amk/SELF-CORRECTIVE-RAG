@@ -245,8 +245,10 @@ self-correcting-rag/
 - [x] **Phase 17:** Sparse retrieval (BM25 index build)
 - [x] **Phase 18:** Sparse retrieval query implementation
 - [x] **Phase 19:** Reciprocal Rank Fusion (RRF) implementation
-- [ ] **Phase 20:** Query preprocessing & expansion
-- [ ] **Phase 21:** Retrieval configuration & tuning
+- [x] **Phase 20:** Hybrid Retriever Node (`hybrid_search()` single entry point & graceful degradation)
+- [x] **Phase 21:** Retrieval Layer Unit & Integration Tests (end-to-end integration, multi-doc scoping, edge cases, 5-QA spot-check eval & latency baseline)
+
+> 🔍 **Retrieval Layer (Phases 16–21) complete — Reranking next (Phase 22–24)**
 
 ### Phase 22–24 — Re-ranking
 - [ ] **Phase 22:** Cross-encoder re-ranker setup

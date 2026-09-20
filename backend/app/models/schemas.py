@@ -392,6 +392,15 @@ class RetrievalResult(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict, description="Metadata dictionary (source_text, document_id, page_number, filename, etc.)")
 
 
+class RerankResult(BaseModel):
+    """Structured response object returned by threshold-based reranking."""
+
+    chunks: list[RetrievalResult] = Field(default_factory=list, description="Filtered and top-n truncated list of relevant chunks")
+    reason: str | None = Field(default=None, description="Reason flag if filtering excluded all candidates (e.g. 'no_relevant_chunks_found')")
+    total_candidates: int = Field(default=0, description="Total candidate chunks received before threshold filtering")
+    relevant_count: int = Field(default=0, description="Number of candidate chunks passing min relevance score threshold")
+
+
 
 
 
