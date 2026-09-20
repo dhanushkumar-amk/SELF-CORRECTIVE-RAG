@@ -7,6 +7,7 @@ from app.retrieval.bm25_index import (
     tokenize_text,
 )
 from app.retrieval.dense_search import dense_search
+from app.retrieval.hybrid_retriever import hybrid_search
 from app.retrieval.pinecone_client import (
     PineconeBatchUpsertError,
     PineconeClient,
@@ -28,4 +29,5 @@ __all__ = [
     "dense_search",
     "sparse_search",
     "reciprocal_rank_fusion",
+    "hybrid_search",
 ]
