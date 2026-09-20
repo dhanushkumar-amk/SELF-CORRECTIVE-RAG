@@ -253,10 +253,12 @@ self-correcting-rag/
 ### Phase 22–24 — Re-ranking
 - [x] **Phase 22:** Local cross-encoder re-ranker setup (`cross-encoder/ms-marco-MiniLM-L-6-v2`)
 - [x] **Phase 23:** Re-ranking pipeline integration & threshold selection (`select_relevant_chunks()` & `RERANK_MIN_SCORE`)
-- [ ] **Phase 24:** Re-ranking evaluation & tests
+- [x] **Phase 24:** Re-ranking performance benchmarking (`docs/benchmarks.md` & regression guard)
+
+> 🎯 **Re-ranking (Phases 22–24) complete — Generation Layer begins (Phases 25–29)**
 
 ### Phase 25–29 — Answer Generation
-- [ ] **Phase 25:** LLM client abstraction (Gemini / Groq)
+- [x] **Phase 25:** LLM provider integration & failover client (`generate_answer()` Groq primary + Gemini fallback)
 - [ ] **Phase 26:** Prompt template design
 - [ ] **Phase 27:** Context-aware answer generation
 - [ ] **Phase 28:** Streaming response support

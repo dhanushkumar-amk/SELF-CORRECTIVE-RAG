@@ -84,10 +84,10 @@ class Settings(BaseSettings):
     # ── LLM Providers (Phase 25 — Generation) ─────────────────────────────
     # Google Gemini: https://ai.google.dev/
     GEMINI_API_KEY: str = ""
-    DEFAULT_GEMINI_MODEL: str = "gemini-1.5-flash"
-    # Groq (Llama-3): https://console.groq.com/
+    DEFAULT_GEMINI_MODEL: str = "gemini-2.5-flash"
+    # Groq (Llama / OSS): https://console.groq.com/
     GROQ_API_KEY: str = ""
-    DEFAULT_GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    DEFAULT_GROQ_MODEL: str = "openai/gpt-oss-120b"
 
     # ── Observability: LangChain / LangSmith (Optional — Debugging) ───────
     # Observability platform for LangGraph traces: https://smith.langchain.com/

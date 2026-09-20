@@ -412,6 +412,25 @@ class LLMResponse(BaseModel):
     error: str | None = Field(default=None, description="Error message if generation failed")
 
 
+class Claim(BaseModel):
+    """An individual factual claim/sentence bound to its source chunk_id citation."""
+
+    claim_text: str = Field(description="Factual statement or sentence in the generated answer")
+    source_chunk_id: str = Field(description="Exact chunk_id supporting this claim")
+
+
+class GeneratedAnswer(BaseModel):
+    """Structured response schema returned by the citation-forced answer generator."""
+
+    claims: list[Claim] = Field(default_factory=list, description="List of factual claims tagged with source_chunk_id citations")
+    insufficient_information: bool = Field(default=False, description="True if provided chunks do not contain enough info to answer the query")
+    unverified_claims: list[Claim] = Field(default_factory=list, description="Claims whose source_chunk_id did not match any input chunk_id")
+    raw_response: str | None = Field(default=None, description="Original raw LLM response text before JSON parsing")
+    provider: str | None = Field(default=None, description="LLM provider name ('groq' or 'gemini')")
+    model_name: str | None = Field(default=None, description="Name of LLM model executed")
+    latency_ms: float = Field(default=0.0, description="Generation latency in milliseconds")
+
+
 
 
 
