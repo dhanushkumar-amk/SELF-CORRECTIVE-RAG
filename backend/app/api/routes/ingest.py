@@ -7,9 +7,10 @@ Phase 6: File reception, magic byte validation, storage, and registry tracking.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile, status
 
 from pathlib import Path
+import threading
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -19,6 +20,7 @@ from app.ingestion.pdf_extractor import (
     extract_raw_pages,
     extract_text_by_page,
 )
+from app.ingestion.pipeline import run_ingestion_pipeline
 from app.ingestion.storage import get_document_registry, sanitize_filename
 from app.ingestion.text_cleaner import clean_document_pages
 from app.models.schemas import (
@@ -28,7 +30,9 @@ from app.models.schemas import (
     DocumentListResponse,
     DocumentMetadata,
     DocumentStatus,
+    DocumentStatusResponse,
     DocumentUploadResponse,
+    IngestionResult,
     PageText,
 )
 
@@ -432,5 +436,122 @@ async def get_document_chunks_endpoint(document_id: str) -> ChunkListResponse:
         chunk_count=len(chunks),
         chunks=chunks,
     )
+
+
+@router.post(
+    "/{document_id}/process",
+    response_model=IngestionResult,
+    status_code=status.HTTP_200_OK,
+    summary="Trigger end-to-end ingestion pipeline (extract -> clean -> chunk -> embed)",
+)
+@router.post(
+    "/documents/{document_id}/process",
+    response_model=IngestionResult,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def process_document_endpoint(
+    document_id: str,
+    background_tasks: BackgroundTasks,
+    sync: bool = False,
+) -> IngestionResult:
+    """Run the complete document ingestion pipeline in a single call.
+
+    Pipeline stages:
+    1. Extract per-page text from stored PDF (Phase 7)
+    2. Clean and normalize extracted text (Phase 8)
+    3. Split text into token-bounded chunks (Phase 9)
+    4. Generate local dense vector embeddings (Phase 11)
+    5. Attach embeddings to chunks and persist to disk (Phase 12)
+
+    Concurrency Model:
+    - By default (`sync=False`), processing runs in the background using FastAPI
+      BackgroundTasks + worker thread, returning immediately with status 'processing'.
+    - Clients can poll `GET /api/ingest/{document_id}/status` to track progress.
+    - If `sync=True`, blocks and returns the completed IngestionResult synchronously.
+    """
+    registry = get_document_registry()
+    doc = registry.get_document(document_id)
+    if not doc:
+        logger.warning("Process requested for nonexistent document ID: %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found.",
+        )
+
+    if sync:
+        logger.info("Executing synchronous ingestion pipeline for document %s...", document_id)
+        result = run_ingestion_pipeline(document_id)
+        return result
+
+    # Update status to processing immediately so initial poll sees 'processing'
+    registry.update_document_metadata(
+        document_id,
+        status=DocumentStatus.PROCESSING,
+        current_stage="extracting",
+        failure_reason=None,
+    )
+
+    def _execute_in_background(doc_id: str) -> None:
+        worker = threading.Thread(
+            target=run_ingestion_pipeline,
+            args=(doc_id,),
+            daemon=True,
+            name=f"ingestion-pipeline-{doc_id}",
+        )
+        worker.start()
+
+    background_tasks.add_task(_execute_in_background, document_id)
+
+    return IngestionResult(
+        document_id=document_id,
+        status=DocumentStatus.PROCESSING,
+        current_stage="extracting",
+        chunk_count=0,
+        total_tokens=0,
+        processing_time_seconds=0.0,
+        failure_reason=None,
+        stage_timings={},
+    )
+
+
+@router.get(
+    "/{document_id}/status",
+    response_model=DocumentStatusResponse,
+    summary="Get document ingestion status, current stage, and progress metrics",
+)
+@router.get(
+    "/documents/{document_id}/status",
+    response_model=DocumentStatusResponse,
+    include_in_schema=False,
+)
+async def get_document_status_endpoint(document_id: str) -> DocumentStatusResponse:
+    """Retrieve the current ingestion status, stage progression, and metrics for a document.
+
+    Used by the frontend to poll during processing and display live progress:
+    uploaded -> extracting -> cleaning -> chunking -> embedding -> ready (or failed).
+    """
+    registry = get_document_registry()
+    doc = registry.get_document(document_id)
+    if not doc:
+        logger.warning("Status requested for nonexistent document ID: %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found.",
+        )
+
+    return DocumentStatusResponse(
+        document_id=doc.document_id,
+        status=doc.status,
+        current_stage=doc.current_stage,
+        failure_reason=doc.failure_reason,
+        chunk_count=doc.chunk_count,
+        page_count=doc.page_count,
+        total_tokens=doc.total_tokens,
+        total_char_count=doc.total_char_count,
+        processing_time_seconds=doc.processing_time_seconds,
+        stage_timings=doc.stage_timings,
+    )
+
 
 

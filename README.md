@@ -233,12 +233,12 @@ self-correcting-rag/
 - [x] **Phase 9:** Text chunking strategy (recursive character splitting)
 - [x] **Phase 10:** Chunk metadata enrichment & Pinecone constraint validation
 - [x] **Phase 11:** Embedding generation (sentence-transformers)
-- [ ] **Phase 12:** Pinecone upsert pipeline
-- [ ] **Phase 13:** Batch ingestion with progress tracking
+- [x] **Phase 12:** Embedding generation pipeline (extract -> clean -> chunk -> embed orchestrator)
+- [ ] **Phase 13:** Pinecone upsert pipeline
 - [ ] **Phase 14:** Duplicate detection & deduplication
 - [ ] **Phase 15:** Ingestion integration tests
 
-> 📄 **Document Ingestion metadata/chunking groundwork complete** — embedding + upsert next (Phase 11-13)
+> 📄 **Document Ingestion embedding pipeline complete** — Pinecone upsert next (Phase 13)
 
 ### Phase 16–21 — Hybrid Retrieval
 - [ ] **Phase 16:** Dense retrieval (Pinecone vector search)

@@ -47,6 +47,10 @@ class DocumentMetadata(BaseModel):
     page_count: int | None = None
     total_char_count: int | None = None
     chunk_count: int | None = None
+    current_stage: str | None = None
+    total_tokens: int | None = None
+    processing_time_seconds: float | None = None
+    stage_timings: dict[str, float] | None = None
 
 
 class PageText(BaseModel):
@@ -81,6 +85,10 @@ class Chunk(BaseModel):
     page_number_end: int = Field(description="Ending page number of the chunk (1-indexed)")
     char_start: int = Field(description="Character offset on the starting page's cleaned text")
     char_end: int = Field(description="Character offset on the ending page's cleaned text")
+    embedding: list[float] | None = Field(
+        default=None,
+        description="Dense vector embedding of chunk text (e.g. 384-dimensional)",
+    )
 
     def to_pinecone_metadata(
         self,
@@ -229,5 +237,34 @@ class ChunkMetadata(BaseModel):
             char_start=int(c_start) if c_start is not None else None,
             char_end=int(c_end) if c_end is not None else None,
         )
+
+
+class IngestionResult(BaseModel):
+    """Result returned after running the complete document ingestion pipeline."""
+
+    document_id: str = Field(description="Unique UUID4 identifier for the document")
+    status: DocumentStatus = Field(description="Final lifecycle status of the document")
+    chunk_count: int = Field(default=0, description="Total number of chunks produced")
+    total_tokens: int = Field(default=0, description="Total number of tokens across all chunks")
+    processing_time_seconds: float = Field(default=0.0, description="Total pipeline execution time in seconds")
+    failure_reason: str | None = Field(default=None, description="Detailed failure reason if pipeline failed")
+    current_stage: str | None = Field(default=None, description="Current or terminal pipeline stage")
+    stage_timings: dict[str, float] = Field(default_factory=dict, description="Execution duration in seconds per stage")
+
+
+class DocumentStatusResponse(BaseModel):
+    """Response schema for polling document ingestion status and stage progress."""
+
+    document_id: str = Field(description="Unique UUID4 identifier for the document")
+    status: DocumentStatus = Field(description="Current status (uploaded, processing, ready, failed)")
+    current_stage: str | None = Field(default=None, description="Current stage (extracting, cleaning, chunking, embedding, ready, failed)")
+    failure_reason: str | None = Field(default=None, description="Detailed failure message if status is failed")
+    chunk_count: int | None = Field(default=None, description="Total chunks if chunking completed")
+    page_count: int | None = Field(default=None, description="Total extracted pages if extraction completed")
+    total_tokens: int | None = Field(default=None, description="Total token count if chunking completed")
+    total_char_count: int | None = Field(default=None, description="Total extracted character count")
+    processing_time_seconds: float | None = Field(default=None, description="Elapsed processing time")
+    stage_timings: dict[str, float] | None = Field(default=None, description="Breakdown of timing per stage")
+
 
 

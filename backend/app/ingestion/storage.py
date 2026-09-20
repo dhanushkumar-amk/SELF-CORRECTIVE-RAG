@@ -126,6 +126,7 @@ class DocumentRegistry:
             size_bytes=len(file_bytes),
             status=status,
             file_path=str(target_path.resolve()),
+            current_stage="uploaded",
         )
 
         with _REGISTRY_LOCK:
