@@ -20,7 +20,7 @@ from app.ingestion.pdf_extractor import (
     extract_raw_pages,
     extract_text_by_page,
 )
-from app.ingestion.pipeline import run_ingestion_pipeline
+from app.ingestion.pipeline import run_ingestion_pipeline, verify_document_upsert
 from app.ingestion.storage import get_document_registry, sanitize_filename
 from app.ingestion.text_cleaner import clean_document_pages
 from app.models.schemas import (
@@ -32,6 +32,7 @@ from app.models.schemas import (
     DocumentStatus,
     DocumentStatusResponse,
     DocumentUploadResponse,
+    DocumentVerificationResponse,
     IngestionResult,
     PageText,
 )
@@ -546,12 +547,46 @@ async def get_document_status_endpoint(document_id: str) -> DocumentStatusRespon
         current_stage=doc.current_stage,
         failure_reason=doc.failure_reason,
         chunk_count=doc.chunk_count,
+        upserted_count=getattr(doc, "upserted_count", None),
         page_count=doc.page_count,
         total_tokens=doc.total_tokens,
         total_char_count=doc.total_char_count,
         processing_time_seconds=doc.processing_time_seconds,
         stage_timings=doc.stage_timings,
     )
+
+
+@router.get(
+    "/{document_id}/verify",
+    response_model=DocumentVerificationResponse,
+    summary="Verify document vectors in Pinecone index against local chunk text",
+)
+@router.get(
+    "/documents/{document_id}/verify",
+    response_model=DocumentVerificationResponse,
+    include_in_schema=False,
+)
+async def verify_document_endpoint(document_id: str) -> DocumentVerificationResponse:
+    """Trigger on-demand post-upsert verification for a document.
+
+    Picks 2-3 sample chunks from disk, fetches them back from Pinecone by vector ID,
+    and confirms that the stored source_text metadata matches the original chunk content.
+    """
+    registry = get_document_registry()
+    doc = registry.get_document(document_id)
+    if not doc:
+        logger.warning("Verification requested for nonexistent document ID: %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found.",
+        )
+
+    verification_result = verify_document_upsert(
+        document_id=document_id,
+        registry=registry,
+    )
+    return verification_result
+
 
 
 

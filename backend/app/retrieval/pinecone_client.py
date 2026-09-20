@@ -6,6 +6,7 @@ Used by ingestion, retrieval, and verification pipelines.
 """
 
 from functools import lru_cache
+import time
 from typing import Any, Mapping, Sequence
 
 from pinecone import Index, Pinecone
@@ -14,6 +15,37 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Pinecone official recommendation: 100 vectors per batch maintains request payload < 2MB
+DEFAULT_UPSERT_BATCH_SIZE: int = 100
+MAX_UPSERT_RETRIES: int = 3
+INITIAL_RETRY_DELAY: float = 0.5
+
+
+class PineconeBatchUpsertError(Exception):
+    """Raised when one or more batches permanently fail during Pinecone upsert."""
+
+    def __init__(
+        self,
+        message: str,
+        successful_ids: list[str] | None = None,
+        failed_ids: list[str] | None = None,
+        original_exception: Exception | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.successful_ids = successful_ids or []
+        self.failed_ids = failed_ids or []
+        self.original_exception = original_exception
+
+
+def _get_vector_id(item: Any) -> str:
+    """Extract string vector ID from dictionary or tuple vector payload."""
+    if isinstance(item, dict):
+        return str(item.get("id", ""))
+    elif isinstance(item, (tuple, list)) and len(item) > 0:
+        return str(item[0])
+    return getattr(item, "id", "")
 
 
 class PineconeClient:
@@ -66,34 +98,153 @@ class PineconeClient:
         self,
         vectors: Sequence[dict[str, Any] | tuple],
         namespace: str = "",
-        batch_size: int | None = None,
+        batch_size: int = DEFAULT_UPSERT_BATCH_SIZE,
+        max_retries: int = MAX_UPSERT_RETRIES,
+        initial_backoff: float = INITIAL_RETRY_DELAY,
     ) -> dict[str, Any]:
-        """Upsert vectors with metadata into the Pinecone index.
+        """Upsert vectors in batches with exponential backoff and partial failure tracking.
+
+        Batching Strategy:
+        - Defaults to 100 vectors per batch per official Pinecone SDK documentation recommendations
+          to ensure encoded metadata payloads (e.g. source_text) remain safely under the 2MB request limit.
+        - Retries failed batches up to max_retries attempts with exponential backoff.
+        - On permanent failure, leaves successfully upserted batches in Pinecone, records exact
+          succeeded vs failed IDs, and raises PineconeBatchUpsertError.
 
         Args:
-            vectors: Sequence of vector items. Each item can be:
-                - dict: {"id": str, "values": list[float], "metadata": dict}
-                - tuple: (id, values, metadata) or (id, values)
+            vectors: Sequence of vector items (dicts or tuples).
             namespace: The namespace to write to (default: root namespace "").
-            batch_size: Optional batch size for chunked upserts.
+            batch_size: Number of vectors per batch request (default: 100).
+            max_retries: Number of retry attempts per batch before failing.
+            initial_backoff: Initial retry backoff delay in seconds.
 
         Returns:
-            Dictionary containing upsert result summary (e.g. {'upserted_count': N}).
+            Dictionary containing:
+                - upserted_count (int): Total successfully upserted vectors.
+                - successful_ids (list[str]): List of all successfully persisted vector IDs.
+                - failed_ids (list[str]): Empty on success.
         """
+        if not vectors:
+            return {"upserted_count": 0, "successful_ids": [], "failed_ids": []}
+
+        effective_batch_size = max(1, batch_size)
+        total_batches = (len(vectors) + effective_batch_size - 1) // effective_batch_size
         logger.info(
-            "Upserting %d vectors into index '%s' (namespace='%s')...",
+            "Upserting %d vectors into index '%s' in %d batch(es) (batch_size=%d, namespace='%s')...",
             len(vectors),
             self.index_name,
+            total_batches,
+            effective_batch_size,
             namespace,
         )
-        response = self.index.upsert(
-            vectors=vectors,
-            namespace=namespace,
-            batch_size=batch_size,
+
+        successful_ids: list[str] = []
+        failed_ids: list[str] = []
+        total_upserted = 0
+
+        for batch_num, start_idx in enumerate(range(0, len(vectors), effective_batch_size), start=1):
+            batch = vectors[start_idx : start_idx + effective_batch_size]
+            batch_ids = [_get_vector_id(v) for v in batch]
+
+            batch_success = False
+            last_error: Exception | None = None
+
+            for attempt in range(1, max_retries + 1):
+                try:
+                    response = self.index.upsert(vectors=batch, namespace=namespace)
+                    count = getattr(response, "upserted_count", len(batch))
+                    total_upserted += count
+                    successful_ids.extend(batch_ids)
+                    batch_success = True
+                    logger.debug(
+                        "Batch %d/%d (%d vectors) upserted successfully on attempt %d.",
+                        batch_num,
+                        total_batches,
+                        len(batch),
+                        attempt,
+                    )
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt < max_retries:
+                        backoff = initial_backoff * (2 ** (attempt - 1))
+                        logger.warning(
+                            "Batch %d/%d upsert attempt %d failed: %s. Retrying in %.2fs...",
+                            batch_num,
+                            total_batches,
+                            attempt,
+                            exc,
+                            backoff,
+                        )
+                        time.sleep(backoff)
+                    else:
+                        logger.error(
+                            "Batch %d/%d permanently failed after %d attempts: %s",
+                            batch_num,
+                            total_batches,
+                            max_retries,
+                            exc,
+                        )
+
+            if not batch_success:
+                failed_ids.extend(batch_ids)
+                # Any subsequent batches are also marked failed
+                remaining_items = vectors[start_idx + effective_batch_size :]
+                for rem in remaining_items:
+                    failed_ids.append(_get_vector_id(rem))
+
+                err_msg = (
+                    f"Batch {batch_num}/{total_batches} permanently failed after {max_retries} attempts: {last_error}. "
+                    f"Succeeded vectors: {len(successful_ids)}, Failed vectors: {len(failed_ids)}"
+                )
+                logger.error(err_msg)
+                raise PineconeBatchUpsertError(
+                    err_msg,
+                    successful_ids=successful_ids,
+                    failed_ids=failed_ids,
+                    original_exception=last_error,
+                )
+
+        logger.info(
+            "Successfully upserted all %d vectors across %d batch(es) into index '%s'.",
+            total_upserted,
+            total_batches,
+            self.index_name,
         )
-        count = getattr(response, "upserted_count", len(vectors))
-        logger.info("Successfully upserted %s vectors.", count)
-        return {"upserted_count": count}
+        return {
+            "upserted_count": total_upserted,
+            "successful_ids": successful_ids,
+            "failed_ids": [],
+        }
+
+    def fetch_vectors(
+        self,
+        ids: Sequence[str],
+        namespace: str = "",
+    ) -> dict[str, dict[str, Any]]:
+        """Fetch vectors and their metadata by ID from the Pinecone index.
+
+        Args:
+            ids: Sequence of vector IDs to retrieve.
+            namespace: Namespace to fetch from (default: root namespace "").
+
+        Returns:
+            Dictionary mapping vector_id -> {"id": str, "values": list[float], "metadata": dict}.
+        """
+        if not ids:
+            return {}
+
+        logger.debug("Fetching %d vectors by ID from index '%s'...", len(ids), self.index_name)
+        response = self.index.fetch(ids=list(ids), namespace=namespace)
+        raw_vectors = getattr(response, "vectors", {}) or {}
+        result: dict[str, dict[str, Any]] = {}
+        for vid, vdata in raw_vectors.items():
+            result[vid] = {
+                "id": getattr(vdata, "id", vid),
+                "values": list(getattr(vdata, "values", []) or []),
+                "metadata": dict(getattr(vdata, "metadata", {}) or {}),
+            }
+        return result
 
     def query_vectors(
         self,

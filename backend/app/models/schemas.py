@@ -47,6 +47,7 @@ class DocumentMetadata(BaseModel):
     page_count: int | None = None
     total_char_count: int | None = None
     chunk_count: int | None = None
+    upserted_count: int | None = None
     current_stage: str | None = None
     total_tokens: int | None = None
     processing_time_seconds: float | None = None
@@ -245,6 +246,7 @@ class IngestionResult(BaseModel):
     document_id: str = Field(description="Unique UUID4 identifier for the document")
     status: DocumentStatus = Field(description="Final lifecycle status of the document")
     chunk_count: int = Field(default=0, description="Total number of chunks produced")
+    upserted_count: int = Field(default=0, description="Total vectors successfully upserted to Pinecone")
     total_tokens: int = Field(default=0, description="Total number of tokens across all chunks")
     processing_time_seconds: float = Field(default=0.0, description="Total pipeline execution time in seconds")
     failure_reason: str | None = Field(default=None, description="Detailed failure reason if pipeline failed")
@@ -257,14 +259,30 @@ class DocumentStatusResponse(BaseModel):
 
     document_id: str = Field(description="Unique UUID4 identifier for the document")
     status: DocumentStatus = Field(description="Current status (uploaded, processing, ready, failed)")
-    current_stage: str | None = Field(default=None, description="Current stage (extracting, cleaning, chunking, embedding, ready, failed)")
+    current_stage: str | None = Field(default=None, description="Current stage (extracting, cleaning, chunking, embedding, upserting, ready, failed)")
     failure_reason: str | None = Field(default=None, description="Detailed failure message if status is failed")
     chunk_count: int | None = Field(default=None, description="Total chunks if chunking completed")
+    upserted_count: int | None = Field(default=None, description="Total vectors upserted to Pinecone")
     page_count: int | None = Field(default=None, description="Total extracted pages if extraction completed")
     total_tokens: int | None = Field(default=None, description="Total token count if chunking completed")
     total_char_count: int | None = Field(default=None, description="Total extracted character count")
     processing_time_seconds: float | None = Field(default=None, description="Elapsed processing time")
     stage_timings: dict[str, float] | None = Field(default=None, description="Breakdown of timing per stage")
+
+
+class DocumentVerificationResponse(BaseModel):
+    """Response schema for on-demand Pinecone vector verification."""
+
+    document_id: str = Field(description="Unique UUID4 identifier for the document")
+    status: DocumentStatus = Field(description="Current document status")
+    verified: bool = Field(description="Whether all sampled vectors matched on-disk chunk source text")
+    chunk_count: int = Field(default=0, description="Total chunks in local document storage")
+    sampled_count: int = Field(default=0, description="Number of chunks sampled and fetched from Pinecone")
+    matched_count: int = Field(default=0, description="Number of sampled chunks whose source text matched exactly")
+    mismatches: list[str] = Field(default_factory=list, description="List of mismatch descriptions if any")
+    verified_chunks: list[dict[str, Any]] = Field(default_factory=list, description="Sampled chunk verification details")
+    message: str = Field(description="Human-readable verification result summary")
+
 
 
 

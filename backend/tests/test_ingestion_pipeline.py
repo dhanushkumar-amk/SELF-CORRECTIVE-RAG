@@ -199,10 +199,11 @@ class TestIngestionPipelineUnit:
 
         # Check logs for stage announcements
         log_text = caplog.text
-        assert "Stage 1/4 [Extracting]" in log_text
-        assert "Stage 2/4 [Cleaning]" in log_text
-        assert "Stage 3/4 [Chunking]" in log_text
-        assert "Stage 4/4 [Embedding]" in log_text
+        assert "[Extracting]" in log_text
+        assert "[Cleaning]" in log_text
+        assert "[Chunking]" in log_text
+        assert "[Embedding]" in log_text
+        assert "[Upserting]" in log_text
         assert "Stage timing breakdown" in log_text
 
 
