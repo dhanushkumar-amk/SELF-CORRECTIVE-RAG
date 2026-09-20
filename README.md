@@ -242,11 +242,11 @@ self-correcting-rag/
 
 ### Phase 16–21 — Hybrid Retrieval
 - [x] **Phase 16:** Dense retrieval (Pinecone vector search)
-- [x] **Phase 17:** Sparse retrieval (BM25)
-- [ ] **Phase 18:** Reciprocal Rank Fusion (RRF) implementation
-- [ ] **Phase 19:** Query preprocessing & expansion
-- [ ] **Phase 20:** Retrieval configuration & tuning
-- [ ] **Phase 21:** Retrieval integration tests
+- [x] **Phase 17:** Sparse retrieval (BM25 index build)
+- [x] **Phase 18:** Sparse retrieval query implementation
+- [x] **Phase 19:** Reciprocal Rank Fusion (RRF) implementation
+- [ ] **Phase 20:** Query preprocessing & expansion
+- [ ] **Phase 21:** Retrieval configuration & tuning
 
 ### Phase 22–24 — Re-ranking
 - [ ] **Phase 22:** Cross-encoder re-ranker setup

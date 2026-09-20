@@ -384,5 +384,14 @@ class DocumentVerificationResponse(BaseModel):
     message: str = Field(description="Human-readable verification result summary")
 
 
+class RetrievalResult(BaseModel):
+    """Unified retrieval result container returned by dense, sparse, and fused hybrid search."""
+
+    chunk_id: str = Field(description="Unique UUID4 identifier of the chunk (or vector id)")
+    score: float = Field(description="Relevance or RRF score")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Metadata dictionary (source_text, document_id, page_number, filename, etc.)")
+
+
+
 
 
