@@ -235,7 +235,7 @@ self-correcting-rag/
 - [x] **Phase 11:** Embedding generation (sentence-transformers)
 - [x] **Phase 12:** Embedding generation pipeline (extract -> clean -> chunk -> embed orchestrator)
 - [x] **Phase 13:** Pinecone upsert pipeline
-- [ ] **Phase 14:** Ingestion error handling & retries
+- [x] **Phase 14:** Ingestion error handling & retries
 - [ ] **Phase 15:** Ingestion status tracking
 
 > 📄 **Document Ingestion core pipeline complete (upload -> extract -> clean -> chunk -> embed -> upsert)** — error handling and status polish next (Phase 14-15)

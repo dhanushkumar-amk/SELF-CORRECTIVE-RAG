@@ -546,6 +546,7 @@ async def get_document_status_endpoint(document_id: str) -> DocumentStatusRespon
         status=doc.status,
         current_stage=doc.current_stage,
         failure_reason=doc.failure_reason,
+        retryable=doc.retryable,
         chunk_count=doc.chunk_count,
         upserted_count=getattr(doc, "upserted_count", None),
         page_count=doc.page_count,
@@ -586,6 +587,90 @@ async def verify_document_endpoint(document_id: str) -> DocumentVerificationResp
         registry=registry,
     )
     return verification_result
+
+
+@router.post(
+    "/{document_id}/retry",
+    response_model=IngestionResult,
+    status_code=status.HTTP_200_OK,
+    summary="Manually retry ingestion pipeline for a failed document",
+)
+@router.post(
+    "/documents/{document_id}/retry",
+    response_model=IngestionResult,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def retry_document_endpoint(
+    document_id: str,
+    background_tasks: BackgroundTasks,
+    sync: bool = True,
+) -> IngestionResult:
+    """Manually re-trigger the ingestion pipeline for a document that previously failed.
+
+    Validation & Pre-flight:
+    1. Rejects request with HTTP 404 if document is not found in registry.
+    2. Rejects request with HTTP 400 if document is permanently failed (retryable is False).
+    3. Purges any pre-existing vectors for document_id from Pinecone before re-running.
+    """
+    registry = get_document_registry()
+    doc = registry.get_document(document_id)
+    if not doc:
+        logger.warning("Retry requested for nonexistent document ID: %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Document with ID '{document_id}' not found.",
+        )
+
+    if doc.retryable is False:
+        logger.warning("Retry rejected for permanently failed document ID: %s", document_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Document '{document_id}' permanently failed ({doc.failure_reason}) and cannot be retried.",
+        )
+
+    # Re-enforce idempotency: purge any partial vectors from pre-existing attempt
+    try:
+        from app.retrieval import get_pinecone_client
+        pc_client = get_pinecone_client()
+        pc_client.delete_vectors(filter={"document_id": document_id})
+    except Exception as exc:
+        logger.warning("Pre-retry vector cleanup encountered exception for doc '%s': %s", document_id, exc)
+
+    if sync:
+        logger.info("Executing synchronous retry ingestion pipeline for document %s...", document_id)
+        result = run_ingestion_pipeline(document_id)
+        return result
+
+    registry.update_document_metadata(
+        document_id,
+        status=DocumentStatus.PROCESSING,
+        current_stage="extracting",
+        failure_reason=None,
+    )
+
+    def _execute_in_background(doc_id: str) -> None:
+        worker = threading.Thread(
+            target=run_ingestion_pipeline,
+            args=(doc_id,),
+            daemon=True,
+            name=f"ingestion-pipeline-retry-{doc_id}",
+        )
+        worker.start()
+
+    background_tasks.add_task(_execute_in_background, document_id)
+
+    return IngestionResult(
+        document_id=document_id,
+        status=DocumentStatus.PROCESSING,
+        current_stage="extracting",
+        chunk_count=0,
+        total_tokens=0,
+        processing_time_seconds=0.0,
+        failure_reason=None,
+        retryable=True,
+        stage_timings={},
+    )
 
 
 

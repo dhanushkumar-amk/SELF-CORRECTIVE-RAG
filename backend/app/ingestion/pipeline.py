@@ -9,26 +9,39 @@ Chains the full document processing flow into a single unified execution:
 5. Generate dense vector embeddings via local sentence-transformers (Phase 11)
 6. Attach embeddings to Chunk objects and persist to disk (Phase 12)
 7. Format metadata, batch upsert to Pinecone with exponential backoff & verify (Phase 13)
+8. Pipeline-level resilience, tenacity retries, transient/permanent error taxonomy & dead-letter handling (Phase 14)
 
-Stage Tracking & Observability:
-- Updates registry.json at each stage transition:
-  uploaded -> extracting -> cleaning -> chunking -> embedding -> upserting -> ready (or failed)
-- Records granular per-stage latency timings for performance monitoring and bottleneck profiling.
-- Enforces strict failure isolation: an exception at any stage immediately halts execution,
-  attributes the failure to that specific stage in failure_reason, and prevents wasted compute.
-- Enforces idempotency by purging pre-existing document vectors before upserting new chunks.
+Resilience & Error Taxonomy:
+- Retries transient errors (Pinecone network blips, timeouts, 429 rate limits) up to 3 times (0s, 2s, 8s backoff) via tenacity.
+- Immediately halts execution without retrying on permanent errors (corrupted PDF, password protection, scanned PDF, missing file).
+- Records `retryable: bool` on dead-letter failed documents in registry.json.
+- Logs structured JSON error payloads for observability.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import time
 from typing import Any
 
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.ingestion.chunk_metadata import create_vector_id
 from app.ingestion.chunker import chunk_document
 from app.ingestion.embedder import embed_texts
+from app.ingestion.exceptions import (
+    IngestionPipelineError,
+    PermanentIngestionError,
+    TransientIngestionError,
+)
 from app.ingestion.pdf_extractor import PDFExtractionError, extract_raw_pages
 from app.ingestion.storage import DocumentRegistry, get_document_registry
 from app.ingestion.text_cleaner import clean_document_pages
@@ -45,25 +58,50 @@ logger = get_logger(__name__)
 __all__ = ["run_ingestion_pipeline", "verify_document_upsert"]
 
 
-def run_ingestion_pipeline(
+def _log_retry_attempt(retry_state: Any) -> None:
+    """Tenacity callback triggered before sleeping between retry attempts."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    attempt = retry_state.attempt_number
+    # Extract document_id from positional args if present
+    doc_id = "unknown"
+    if retry_state.args:
+        doc_id = str(retry_state.args[0])
+
+    stage = getattr(exc, "stage", "pipeline") if exc else "pipeline"
+    error_type = exc.__class__.__name__ if exc else "UnknownError"
+    error_msg = str(exc) if exc else "Transient error encountered"
+
+    log_payload = {
+        "event": "ingestion_pipeline_retry",
+        "document_id": doc_id,
+        "stage": stage,
+        "error_type": error_type,
+        "error_message": error_msg,
+        "attempt_number": attempt,
+        "retryable": True,
+    }
+    logger.warning("Pipeline transient error (attempt %d/3), retrying... %s", attempt, json.dumps(log_payload))
+
+
+@retry(
+    retry=retry_if_exception_type(TransientIngestionError),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=10),
+    before_sleep=_log_retry_attempt,
+    reraise=True,
+)
+def _execute_pipeline_stages(
     document_id: str,
-    registry: DocumentRegistry | None = None,
+    reg: DocumentRegistry,
     pinecone_client: PineconeClient | None = None,
     verify_upsert: bool = True,
 ) -> IngestionResult:
-    """Execute the complete document ingestion pipeline for a given document_id.
+    """Internal pipeline execution function wrapped with Tenacity retry logic.
 
-    Args:
-        document_id: UUID of the uploaded document in the registry.
-        registry: Optional custom DocumentRegistry instance (defaults to global singleton).
-        pinecone_client: Optional custom PineconeClient instance (defaults to global singleton).
-        verify_upsert: If True, fetches sampled vectors from Pinecone post-upsert to verify text integrity.
-
-    Returns:
-        IngestionResult detailing final status, chunk counts, token totals,
-        per-stage timing breakdown, and any failure reason.
+    Only retries when TransientIngestionError is raised. PermanentIngestionError causes
+    immediate termination without retry.
     """
-    reg = registry or get_document_registry()
+    settings = get_settings()
     stage_timings: dict[str, float] = {}
     overall_start = time.perf_counter()
 
@@ -72,18 +110,9 @@ def run_ingestion_pipeline(
     # -------------------------------------------------------------------------
     doc = reg.get_document(document_id)
     if not doc:
-        logger.error("Ingestion pipeline failed: Document '%s' not found in registry.", document_id)
-        failure_reason = f"Document with ID '{document_id}' not found in registry."
-        return IngestionResult(
-            document_id=document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            chunk_count=0,
-            upserted_count=0,
-            total_tokens=0,
-            processing_time_seconds=0.0,
-            failure_reason=failure_reason,
-            stage_timings={},
+        raise PermanentIngestionError(
+            f"Document with ID '{document_id}' not found in registry.",
+            stage="preflight",
         )
 
     pdf_path = (
@@ -92,24 +121,9 @@ def run_ingestion_pipeline(
         else reg.upload_dir / document_id / doc.filename
     )
     if not pdf_path.exists():
-        logger.error("Ingestion pipeline failed: PDF file missing at '%s'", pdf_path)
-        failure_reason = "failed at extraction: PDF file does not exist on disk"
-        reg.update_document_metadata(
-            document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            failure_reason=failure_reason,
-        )
-        return IngestionResult(
-            document_id=document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            chunk_count=0,
-            upserted_count=0,
-            total_tokens=0,
-            processing_time_seconds=0.0,
-            failure_reason=failure_reason,
-            stage_timings={},
+        raise PermanentIngestionError(
+            "failed at extraction: PDF file does not exist on disk",
+            stage="extracting",
         )
 
     # -------------------------------------------------------------------------
@@ -135,55 +149,24 @@ def run_ingestion_pipeline(
     except PDFExtractionError as exc:
         t_extract = time.perf_counter() - t_extract_start
         stage_timings["extraction_seconds"] = round(t_extract, 4)
-        total_time = round(time.perf_counter() - overall_start, 4)
-        stage_timings["total_seconds"] = total_time
-        failure_reason = f"failed at extraction: {exc.message}"
-        logger.warning("Ingestion halted: %s for doc '%s'", failure_reason, document_id)
-        reg.update_document_metadata(
-            document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-            processing_time_seconds=total_time,
-        )
-        return IngestionResult(
-            document_id=document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            chunk_count=0,
-            upserted_count=0,
-            total_tokens=0,
-            processing_time_seconds=total_time,
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-        )
+        raise PermanentIngestionError(
+            f"failed at extraction: {exc.message}",
+            stage="extracting",
+        ) from exc
+    except (TimeoutError, ConnectionError, OSError) as exc:
+        t_extract = time.perf_counter() - t_extract_start
+        stage_timings["extraction_seconds"] = round(t_extract, 4)
+        raise TransientIngestionError(
+            f"failed at extraction: {exc}",
+            stage="extracting",
+        ) from exc
     except Exception as exc:
         t_extract = time.perf_counter() - t_extract_start
         stage_timings["extraction_seconds"] = round(t_extract, 4)
-        total_time = round(time.perf_counter() - overall_start, 4)
-        stage_timings["total_seconds"] = total_time
-        failure_reason = f"failed at extraction: {exc}"
-        logger.error("Unexpected error in extraction for doc '%s': %s", document_id, exc)
-        reg.update_document_metadata(
-            document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-            processing_time_seconds=total_time,
-        )
-        return IngestionResult(
-            document_id=document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            chunk_count=0,
-            upserted_count=0,
-            total_tokens=0,
-            processing_time_seconds=total_time,
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-        )
+        raise PermanentIngestionError(
+            f"failed at extraction: {exc}",
+            stage="extracting",
+        ) from exc
 
     # -------------------------------------------------------------------------
     # Stage 2: Cleaning
@@ -215,29 +198,10 @@ def run_ingestion_pipeline(
     except Exception as exc:
         t_clean = time.perf_counter() - t_clean_start
         stage_timings["cleaning_seconds"] = round(t_clean, 4)
-        total_time = round(time.perf_counter() - overall_start, 4)
-        stage_timings["total_seconds"] = total_time
-        failure_reason = f"failed at cleaning: {exc}"
-        logger.error("Ingestion halted: %s for doc '%s'", failure_reason, document_id)
-        reg.update_document_metadata(
-            document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-            processing_time_seconds=total_time,
-        )
-        return IngestionResult(
-            document_id=document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            chunk_count=0,
-            upserted_count=0,
-            total_tokens=0,
-            processing_time_seconds=total_time,
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-        )
+        raise PermanentIngestionError(
+            f"failed at cleaning: {exc}",
+            stage="cleaning",
+        ) from exc
 
     # -------------------------------------------------------------------------
     # Stage 3: Chunking
@@ -251,7 +215,10 @@ def run_ingestion_pipeline(
     try:
         chunks = chunk_document(document_id=document_id, pages=clean_pages)
         if not chunks:
-            raise ValueError("No text chunks generated from cleaned document pages")
+            raise PermanentIngestionError(
+                "failed at chunking: No text chunks generated from cleaned document pages",
+                stage="chunking",
+            )
 
         reg.save_chunks(document_id, chunks)
         total_tokens = sum(c.token_count for c in chunks)
@@ -269,32 +236,15 @@ def run_ingestion_pipeline(
             len(chunks),
             total_tokens,
         )
+    except PermanentIngestionError:
+        raise
     except Exception as exc:
         t_chunk = time.perf_counter() - t_chunk_start
         stage_timings["chunking_seconds"] = round(t_chunk, 4)
-        total_time = round(time.perf_counter() - overall_start, 4)
-        stage_timings["total_seconds"] = total_time
-        failure_reason = f"failed at chunking: {exc}"
-        logger.error("Ingestion halted: %s for doc '%s'", failure_reason, document_id)
-        reg.update_document_metadata(
-            document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-            processing_time_seconds=total_time,
-        )
-        return IngestionResult(
-            document_id=document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            chunk_count=0,
-            upserted_count=0,
-            total_tokens=0,
-            processing_time_seconds=total_time,
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-        )
+        raise PermanentIngestionError(
+            f"failed at chunking: {exc}",
+            stage="chunking",
+        ) from exc
 
     # -------------------------------------------------------------------------
     # Stage 4: Embedding Generation
@@ -308,52 +258,50 @@ def run_ingestion_pipeline(
     try:
         chunk_texts = [c.text for c in chunks]
         embeddings = embed_texts(chunk_texts)
-        if len(embeddings) != len(chunks):
-            raise ValueError(
-                f"Embedding vector count mismatch: generated {len(embeddings)} vectors for {len(chunks)} chunks"
+        t_embed = time.perf_counter() - t_embed_start
+        stage_timings["embedding_seconds"] = round(t_embed, 4)
+
+        warn_threshold = getattr(settings, "EMBEDDING_TIMEOUT_WARN_SECONDS", 300.0)
+        if t_embed > warn_threshold:
+            logger.warning(
+                "Embedding generation for doc '%s' took %.2fs, exceeding threshold of %.2fs",
+                document_id,
+                t_embed,
+                warn_threshold,
             )
 
-        # Attach dense vector embedding to each Chunk object
+        if len(embeddings) != len(chunks):
+            raise PermanentIngestionError(
+                f"failed at embedding: Vector count mismatch ({len(embeddings)} vs {len(chunks)})",
+                stage="embedding",
+            )
+
         for chunk, emb in zip(chunks, embeddings):
             chunk.embedding = emb
 
-        # Persist chunks with embedded vectors to uploads/{document_id}/chunks.json
         reg.save_chunks(document_id, chunks)
-        t_embed = time.perf_counter() - t_embed_start
-        stage_timings["embedding_seconds"] = round(t_embed, 4)
         logger.info(
-            "Stage 4/5 [Embedding] completed for doc '%s' in %.4fs (%d vectors generated, dim: %d)",
+            "Stage 4/5 [Embedding] completed for doc '%s' in %.4fs (%d vectors generated)",
             document_id,
             t_embed,
             len(embeddings),
-            len(embeddings[0]) if embeddings else 0,
         )
+    except PermanentIngestionError:
+        raise
+    except (TimeoutError, ConnectionError, OSError) as exc:
+        t_embed = time.perf_counter() - t_embed_start
+        stage_timings["embedding_seconds"] = round(t_embed, 4)
+        raise TransientIngestionError(
+            f"failed at embedding: {exc}",
+            stage="embedding",
+        ) from exc
     except Exception as exc:
         t_embed = time.perf_counter() - t_embed_start
         stage_timings["embedding_seconds"] = round(t_embed, 4)
-        total_time = round(time.perf_counter() - overall_start, 4)
-        stage_timings["total_seconds"] = total_time
-        failure_reason = f"failed at embedding: {exc}"
-        logger.error("Ingestion halted: %s for doc '%s'", failure_reason, document_id)
-        reg.update_document_metadata(
-            document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-            processing_time_seconds=total_time,
-        )
-        return IngestionResult(
-            document_id=document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            chunk_count=len(chunks),
-            upserted_count=0,
-            total_tokens=total_tokens,
-            processing_time_seconds=total_time,
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-        )
+        raise PermanentIngestionError(
+            f"failed at embedding: {exc}",
+            stage="embedding",
+        ) from exc
 
     # -------------------------------------------------------------------------
     # Stage 5: Pinecone Vector Upsert & Post-Upsert Verification
@@ -368,7 +316,6 @@ def run_ingestion_pipeline(
     upserted_count = 0
 
     try:
-        # 1. Idempotency Check: Purge any pre-existing vectors for this document_id
         logger.info(
             "Enforcing idempotency: Purging existing vectors for doc '%s' from Pinecone...",
             document_id,
@@ -382,11 +329,13 @@ def run_ingestion_pipeline(
                 del_exc,
             )
 
-        # 2. Build Pinecone vector payloads with metadata
         vector_payloads: list[dict[str, Any]] = []
         for c in chunks:
             if c.embedding is None:
-                raise ValueError(f"Chunk '{c.chunk_id}' has no embedding attached.")
+                raise PermanentIngestionError(
+                    f"failed at upserting: Chunk '{c.chunk_id}' has no embedding attached",
+                    stage="upserting",
+                )
             vec_id = create_vector_id(document_id, c.chunk_id)
             meta = c.to_pinecone_metadata(
                 filename=doc.filename,
@@ -398,11 +347,9 @@ def run_ingestion_pipeline(
                 "metadata": meta,
             })
 
-        # 3. Batched Upsert with Exponential Backoff (100 vectors/batch)
         upsert_res = pc_client.upsert_vectors(vector_payloads, batch_size=100)
         upserted_count = upsert_res.get("upserted_count", len(vector_payloads))
 
-        # 4. Post-Upsert Verification: Sample 2-3 chunks and confirm source_text matches
         if verify_upsert and chunks:
             sample_count = min(3, len(chunks))
             if sample_count == 1:
@@ -430,8 +377,6 @@ def run_ingestion_pipeline(
                         len(sc.text),
                         len(fetched_text),
                     )
-                else:
-                    logger.debug("Post-upsert verification: Vector '%s' content matches source text.", vid)
 
         t_upsert = time.perf_counter() - t_upsert_start
         stage_timings["upserting_seconds"] = round(t_upsert, 4)
@@ -444,76 +389,33 @@ def run_ingestion_pipeline(
     except PineconeBatchUpsertError as exc:
         t_upsert = time.perf_counter() - t_upsert_start
         stage_timings["upserting_seconds"] = round(t_upsert, 4)
-        total_time = round(time.perf_counter() - overall_start, 4)
-        stage_timings["total_seconds"] = total_time
-        failure_reason = f"failed at upserting: {exc.message}"
-        logger.error("Ingestion halted: %s for doc '%s'", failure_reason, document_id)
-        reg.update_document_metadata(
-            document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-            processing_time_seconds=total_time,
-            upserted_count=len(exc.successful_ids),
-        )
-        return IngestionResult(
-            document_id=document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            chunk_count=len(chunks),
-            upserted_count=len(exc.successful_ids),
-            total_tokens=total_tokens,
-            processing_time_seconds=total_time,
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-        )
+        raise TransientIngestionError(
+            f"failed at upserting: {exc.message}",
+            stage="upserting",
+        ) from exc
+    except (TimeoutError, ConnectionError, OSError) as exc:
+        t_upsert = time.perf_counter() - t_upsert_start
+        stage_timings["upserting_seconds"] = round(t_upsert, 4)
+        raise TransientIngestionError(
+            f"failed at upserting: {exc}",
+            stage="upserting",
+        ) from exc
     except Exception as exc:
         t_upsert = time.perf_counter() - t_upsert_start
         stage_timings["upserting_seconds"] = round(t_upsert, 4)
-        total_time = round(time.perf_counter() - overall_start, 4)
-        stage_timings["total_seconds"] = total_time
-        failure_reason = f"failed at upserting: {exc}"
-        logger.error("Ingestion halted: %s for doc '%s'", failure_reason, document_id)
-        reg.update_document_metadata(
-            document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-            processing_time_seconds=total_time,
-            upserted_count=upserted_count,
-        )
-        return IngestionResult(
-            document_id=document_id,
-            status=DocumentStatus.FAILED,
-            current_stage="failed",
-            chunk_count=len(chunks),
-            upserted_count=upserted_count,
-            total_tokens=total_tokens,
-            processing_time_seconds=total_time,
-            failure_reason=failure_reason,
-            stage_timings=stage_timings,
-        )
+        if isinstance(exc, (TransientIngestionError, PermanentIngestionError)):
+            raise
+        exc_name = exc.__class__.__name__.lower()
+        if "pinecone" in exc_name or "timeout" in exc_name or "connection" in exc_name or "http" in exc_name:
+            raise TransientIngestionError(f"failed at upserting: {exc}", stage="upserting") from exc
+        else:
+            raise PermanentIngestionError(f"failed at upserting: {exc}", stage="upserting") from exc
 
     # -------------------------------------------------------------------------
     # Stage 6: Completion & Metric Finalization
     # -------------------------------------------------------------------------
     total_time = round(time.perf_counter() - overall_start, 4)
     stage_timings["total_seconds"] = total_time
-
-    reg.update_document_metadata(
-        document_id,
-        status=DocumentStatus.READY,
-        current_stage="ready",
-        failure_reason=None,
-        chunk_count=len(chunks),
-        upserted_count=upserted_count,
-        total_tokens=total_tokens,
-        processing_time_seconds=total_time,
-        stage_timings=stage_timings,
-    )
-
     logger.info(
         "Ingestion pipeline completed for document '%s': %d chunks, %d vectors upserted, %d total tokens in %.4fs. "
         "Stage timing breakdown: extraction=%.4fs, cleaning=%.4fs, chunking=%.4fs, embedding=%.4fs, upserting=%.4fs",
@@ -522,11 +424,24 @@ def run_ingestion_pipeline(
         upserted_count,
         total_tokens,
         total_time,
-        stage_timings["extraction_seconds"],
-        stage_timings["cleaning_seconds"],
-        stage_timings["chunking_seconds"],
-        stage_timings["embedding_seconds"],
-        stage_timings["upserting_seconds"],
+        stage_timings.get("extraction_seconds", 0.0),
+        stage_timings.get("cleaning_seconds", 0.0),
+        stage_timings.get("chunking_seconds", 0.0),
+        stage_timings.get("embedding_seconds", 0.0),
+        stage_timings.get("upserting_seconds", 0.0),
+    )
+
+    reg.update_document_metadata(
+        document_id,
+        status=DocumentStatus.READY,
+        current_stage="ready",
+        failure_reason=None,
+        retryable=None,
+        chunk_count=len(chunks),
+        upserted_count=upserted_count,
+        total_tokens=total_tokens,
+        processing_time_seconds=total_time,
+        stage_timings=stage_timings,
     )
 
     return IngestionResult(
@@ -538,8 +453,136 @@ def run_ingestion_pipeline(
         total_tokens=total_tokens,
         processing_time_seconds=total_time,
         failure_reason=None,
+        retryable=None,
         stage_timings=stage_timings,
     )
+
+
+def run_ingestion_pipeline(
+    document_id: str,
+    registry: DocumentRegistry | None = None,
+    pinecone_client: PineconeClient | None = None,
+    verify_upsert: bool = True,
+) -> IngestionResult:
+    """Execute the complete document ingestion pipeline with resilience and retries.
+
+    Args:
+        document_id: UUID of the uploaded document in the registry.
+        registry: Optional custom DocumentRegistry instance (defaults to global singleton).
+        pinecone_client: Optional custom PineconeClient instance (defaults to global singleton).
+        verify_upsert: If True, fetches sampled vectors from Pinecone post-upsert to verify text integrity.
+
+    Returns:
+        IngestionResult detailing final status, chunk counts, token totals,
+        per-stage timing breakdown, retry eligibility, and failure reason.
+    """
+    reg = registry or get_document_registry()
+
+    try:
+        return _execute_pipeline_stages(
+            document_id=document_id,
+            reg=reg,
+            pinecone_client=pinecone_client,
+            verify_upsert=verify_upsert,
+        )
+    except PermanentIngestionError as exc:
+        stage = exc.stage or "unknown"
+        failure_reason = str(exc.message)
+        log_payload = {
+            "event": "ingestion_permanent_failure",
+            "document_id": document_id,
+            "stage": stage,
+            "error_type": exc.__class__.__name__,
+            "error_message": failure_reason,
+            "attempt_number": 1,
+            "retryable": False,
+        }
+        logger.error("Permanent ingestion error halted pipeline: %s", json.dumps(log_payload))
+
+        reg.update_document_metadata(
+            document_id,
+            status=DocumentStatus.FAILED,
+            current_stage="failed",
+            failure_reason=failure_reason,
+            retryable=False,
+        )
+        return IngestionResult(
+            document_id=document_id,
+            status=DocumentStatus.FAILED,
+            current_stage="failed",
+            chunk_count=0,
+            upserted_count=0,
+            total_tokens=0,
+            processing_time_seconds=0.0,
+            failure_reason=failure_reason,
+            retryable=False,
+            stage_timings={},
+        )
+    except TransientIngestionError as exc:
+        stage = exc.stage or "unknown"
+        failure_reason = str(exc.message)
+        log_payload = {
+            "event": "ingestion_transient_failure_exhausted",
+            "document_id": document_id,
+            "stage": stage,
+            "error_type": exc.__class__.__name__,
+            "error_message": failure_reason,
+            "attempt_number": 3,
+            "retryable": True,
+        }
+        logger.error("Transient ingestion error exhausted all retries: %s", json.dumps(log_payload))
+
+        reg.update_document_metadata(
+            document_id,
+            status=DocumentStatus.FAILED,
+            current_stage="failed",
+            failure_reason=failure_reason,
+            retryable=True,
+        )
+        return IngestionResult(
+            document_id=document_id,
+            status=DocumentStatus.FAILED,
+            current_stage="failed",
+            chunk_count=0,
+            upserted_count=0,
+            total_tokens=0,
+            processing_time_seconds=0.0,
+            failure_reason=failure_reason,
+            retryable=True,
+            stage_timings={},
+        )
+    except Exception as exc:
+        failure_reason = f"Unexpected error during ingestion: {exc}"
+        log_payload = {
+            "event": "ingestion_unexpected_failure",
+            "document_id": document_id,
+            "stage": "unknown",
+            "error_type": exc.__class__.__name__,
+            "error_message": str(exc),
+            "attempt_number": 1,
+            "retryable": False,
+        }
+        logger.error("Unexpected error halted pipeline: %s", json.dumps(log_payload))
+
+        reg.update_document_metadata(
+            document_id,
+            status=DocumentStatus.FAILED,
+            current_stage="failed",
+            failure_reason=failure_reason,
+            retryable=False,
+        )
+        return IngestionResult(
+            document_id=document_id,
+            status=DocumentStatus.FAILED,
+            current_stage="failed",
+            chunk_count=0,
+            upserted_count=0,
+            total_tokens=0,
+            processing_time_seconds=0.0,
+            failure_reason=failure_reason,
+            retryable=False,
+            stage_timings={},
+        )
 
 
 def verify_document_upsert(
@@ -591,7 +634,6 @@ def verify_document_upsert(
     pc_client = pinecone_client or get_pinecone_client()
     sample_count = min(sample_size, len(chunks))
 
-    # Pick representative chunks (first, middle, last)
     if sample_count == 1:
         sampled_indices = [0]
     elif sample_count == 2:

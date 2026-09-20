@@ -23,6 +23,8 @@ from app.ingestion.text_cleaner import (
 )
 from app.models.schemas import PageText
 
+from app.ingestion.exceptions import PermanentIngestionError
+
 logger = get_logger(__name__)
 
 # Re-export detect_recurring_headers_footers for backward compatibility
@@ -34,11 +36,11 @@ __all__ = [
 ]
 
 
-class PDFExtractionError(Exception):
+class PDFExtractionError(PermanentIngestionError):
     """Raised when PDF extraction cannot complete due to document-level issues."""
 
     def __init__(self, message: str) -> None:
-        super().__init__(message)
+        super().__init__(message, stage="extracting")
         self.message = message
 
 

@@ -1,0 +1,70 @@
+{
+  "demo_transient_recovery": {
+    "document_id": "demo_transient_recovery",
+    "filename": "demo.pdf",
+    "upload_timestamp": "2026-09-20T12:22:16.441266+00:00",
+    "size_bytes": 23,
+    "status": "ready",
+    "file_path": "C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\scratch\\test_uploads\\demo_transient_recovery\\demo.pdf",
+    "failure_reason": null,
+    "retryable": null,
+    "page_count": 1,
+    "total_char_count": 46,
+    "chunk_count": 1,
+    "upserted_count": 1,
+    "current_stage": "ready",
+    "total_tokens": 9,
+    "processing_time_seconds": 0.0229,
+    "stage_timings": {
+      "extraction_seconds": 0.0,
+      "cleaning_seconds": 0.0029,
+      "chunking_seconds": 0.0026,
+      "embedding_seconds": 0.0086,
+      "upserting_seconds": 0.0007,
+      "total_seconds": 0.0229
+    }
+  },
+  "demo_permanent_corrupt": {
+    "document_id": "demo_permanent_corrupt",
+    "filename": "corrupt.pdf",
+    "upload_timestamp": "2026-09-20T12:22:26.479741+00:00",
+    "size_bytes": 23,
+    "status": "failed",
+    "file_path": "C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\scratch\\test_uploads\\demo_permanent_corrupt\\corrupt.pdf",
+    "failure_reason": "failed at extraction: [extracting] corrupted or unreadable PDF file",
+    "retryable": false,
+    "page_count": null,
+    "total_char_count": null,
+    "chunk_count": null,
+    "upserted_count": null,
+    "current_stage": "failed",
+    "total_tokens": null,
+    "processing_time_seconds": null,
+    "stage_timings": null
+  },
+  "demo_manual_retry": {
+    "document_id": "demo_manual_retry",
+    "filename": "retryable.pdf",
+    "upload_timestamp": "2026-09-20T12:22:26.521716+00:00",
+    "size_bytes": 23,
+    "status": "ready",
+    "file_path": "C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\scratch\\test_uploads\\demo_manual_retry\\retryable.pdf",
+    "failure_reason": null,
+    "retryable": null,
+    "page_count": 1,
+    "total_char_count": 46,
+    "chunk_count": 1,
+    "upserted_count": 1,
+    "current_stage": "ready",
+    "total_tokens": 9,
+    "processing_time_seconds": 0.0281,
+    "stage_timings": {
+      "extraction_seconds": 0.0,
+      "cleaning_seconds": 0.0043,
+      "chunking_seconds": 0.0028,
+      "embedding_seconds": 0.0099,
+      "upserting_seconds": 0.002,
+      "total_seconds": 0.0281
+    }
+  }
+}

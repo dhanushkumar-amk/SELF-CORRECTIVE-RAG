@@ -13,6 +13,7 @@ from pinecone import Index, Pinecone
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
+from app.ingestion.exceptions import TransientIngestionError
 
 logger = get_logger(__name__)
 
@@ -22,7 +23,7 @@ MAX_UPSERT_RETRIES: int = 3
 INITIAL_RETRY_DELAY: float = 0.5
 
 
-class PineconeBatchUpsertError(Exception):
+class PineconeBatchUpsertError(TransientIngestionError):
     """Raised when one or more batches permanently fail during Pinecone upsert."""
 
     def __init__(
@@ -32,7 +33,7 @@ class PineconeBatchUpsertError(Exception):
         failed_ids: list[str] | None = None,
         original_exception: Exception | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(message, stage="upserting")
         self.message = message
         self.successful_ids = successful_ids or []
         self.failed_ids = failed_ids or []
@@ -55,17 +56,22 @@ class PineconeClient:
         self,
         api_key: str | None = None,
         index_name: str | None = None,
+        timeout: float | None = None,
     ) -> None:
         """Initialize the Pinecone wrapper.
 
         Args:
             api_key: Optional explicit API key; defaults to settings.PINECONE_API_KEY.
             index_name: Optional explicit index name; defaults to settings.PINECONE_INDEX_NAME.
+            timeout: Optional explicit network timeout in seconds; defaults to settings.PINECONE_TIMEOUT_SECONDS.
         """
         settings = get_settings()
         self.api_key = api_key if api_key is not None else settings.PINECONE_API_KEY
         self.index_name = (
             index_name if index_name is not None else settings.PINECONE_INDEX_NAME
+        )
+        self.timeout = (
+            timeout if timeout is not None else getattr(settings, "PINECONE_TIMEOUT_SECONDS", 30.0)
         )
         self._pc: Pinecone | None = None
         self._index: Index | None = None
@@ -78,8 +84,8 @@ class PineconeClient:
                 "PINECONE_API_KEY is not configured. Set it in backend/.env"
             )
         if self._pc is None:
-            logger.info("Initializing Pinecone client...")
-            self._pc = Pinecone(api_key=self.api_key)
+            logger.info("Initializing Pinecone client (timeout=%.1fs)...", self.timeout)
+            self._pc = Pinecone(api_key=self.api_key, timeout=self.timeout)
         return self._pc
 
     @property

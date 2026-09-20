@@ -75,6 +75,8 @@ class Settings(BaseSettings):
     PINECONE_API_KEY: str = ""
     PINECONE_INDEX_NAME: str = "self-correcting-rag"
     PINECONE_ENVIRONMENT: str = "us-east-1"
+    PINECONE_TIMEOUT_SECONDS: int = 30
+    EMBEDDING_TIMEOUT_WARN_SECONDS: float = 300.0  # 5 minutes
 
     # ── LLM Providers (Deferred to Phase 25 — Generation) ─────────────────
     # In Phase 25+, at least one LLM key is required for answer generation

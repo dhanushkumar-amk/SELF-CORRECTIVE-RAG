@@ -44,6 +44,7 @@ class DocumentMetadata(BaseModel):
     status: DocumentStatus = DocumentStatus.UPLOADED
     file_path: str | None = None
     failure_reason: str | None = None
+    retryable: bool | None = None
     page_count: int | None = None
     total_char_count: int | None = None
     chunk_count: int | None = None
@@ -126,30 +127,7 @@ class DocumentListResponse(BaseModel):
 
 
 class ChunkMetadata(BaseModel):
-    """Metadata associated with each text chunk stored in Pinecone vector index.
-
-    Pinecone metadata values are strictly restricted to strings, numbers (int/float),
-    booleans, or lists of strings. All fields in this model conform directly to these types.
-
-    Design Justifications:
-    - document_id (str): UUID of source document for scoped filtering.
-    - chunk_id (str): Unique chunk UUID4.
-    - chunk_index (int): 0-indexed sequence for reading order reconstruction.
-    - page_number (int): Starting page number (1-indexed) for citation rendering.
-    - page_number_end (int): Ending page number (1-indexed) for page-spanning chunks.
-    - source_text (str): Full chunk text retained directly in metadata for NLI verification
-      (Phase 34) without requiring an external database lookup.
-    - token_count (int): Token measurement for LLM context window budgeting.
-    - filename (str): Original document filename for user citation rendering.
-    - document_title (str): Display title, defaults to filename if unextracted.
-
-    Explicit Exclusion of char_start and char_end:
-    - char_start and char_end were computed in Phase 9 for internal page slice tracking.
-      They are intentionally excluded from Pinecone vector metadata to minimize payload size
-      and optimize search query bandwidth. The unique chunk_id / vector_id allows looking up
-      the complete chunk record with exact character offsets from local disk storage
-      (uploads/{document_id}/chunks.json) whenever character-level text highlighting is required.
-    """
+    """Metadata associated with each text chunk stored in Pinecone vector index."""
 
     document_id: str = Field(description="Unique UUID4 identifier of the parent document")
     chunk_id: str = Field(description="Unique UUID4 identifier of the chunk")
@@ -250,6 +228,7 @@ class IngestionResult(BaseModel):
     total_tokens: int = Field(default=0, description="Total number of tokens across all chunks")
     processing_time_seconds: float = Field(default=0.0, description="Total pipeline execution time in seconds")
     failure_reason: str | None = Field(default=None, description="Detailed failure reason if pipeline failed")
+    retryable: bool | None = Field(default=None, description="Whether the failure is eligible for retry")
     current_stage: str | None = Field(default=None, description="Current or terminal pipeline stage")
     stage_timings: dict[str, float] = Field(default_factory=dict, description="Execution duration in seconds per stage")
 
@@ -261,6 +240,7 @@ class DocumentStatusResponse(BaseModel):
     status: DocumentStatus = Field(description="Current status (uploaded, processing, ready, failed)")
     current_stage: str | None = Field(default=None, description="Current stage (extracting, cleaning, chunking, embedding, upserting, ready, failed)")
     failure_reason: str | None = Field(default=None, description="Detailed failure message if status is failed")
+    retryable: bool | None = Field(default=None, description="Whether a failed document is eligible for retry")
     chunk_count: int | None = Field(default=None, description="Total chunks if chunking completed")
     upserted_count: int | None = Field(default=None, description="Total vectors upserted to Pinecone")
     page_count: int | None = Field(default=None, description="Total extracted pages if extraction completed")
