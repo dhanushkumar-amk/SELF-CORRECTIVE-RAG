@@ -241,8 +241,8 @@ self-correcting-rag/
 > 📄 **Document Ingestion (Phases 6–15) fully complete** — Retrieval Layer next (Phase 16–21)
 
 ### Phase 16–21 — Hybrid Retrieval
-- [ ] **Phase 16:** Dense retrieval (Pinecone vector search)
-- [ ] **Phase 17:** Sparse retrieval (BM25)
+- [x] **Phase 16:** Dense retrieval (Pinecone vector search)
+- [x] **Phase 17:** Sparse retrieval (BM25)
 - [ ] **Phase 18:** Reciprocal Rank Fusion (RRF) implementation
 - [ ] **Phase 19:** Query preprocessing & expansion
 - [ ] **Phase 20:** Retrieval configuration & tuning

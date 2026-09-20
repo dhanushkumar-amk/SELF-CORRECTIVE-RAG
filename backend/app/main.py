@@ -15,6 +15,8 @@ from app.api.routes import debug, health, ingest, query
 from app.core.config import settings
 from app.core.logging import get_logger
 
+from app.retrieval import get_bm25_index
+
 logger = get_logger(__name__)
 
 
@@ -26,6 +28,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.PROJECT_NAME,
         settings.VERSION,
     )
+    # Initialize in-memory BM25 index on startup from stored READY chunks
+    try:
+        bm25_idx = get_bm25_index()
+        logger.info(
+            "BM25 index initialized on startup (%d chunks indexed in %.4fs)",
+            bm25_idx.chunk_count,
+            bm25_idx.build_time_seconds,
+        )
+    except Exception as exc:
+        logger.warning("Failed to initialize BM25 index on startup: %s", exc)
+
     yield
 
 

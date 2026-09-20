@@ -51,7 +51,12 @@ from app.models.schemas import (
     DocumentVerificationResponse,
     IngestionResult,
 )
-from app.retrieval import PineconeBatchUpsertError, PineconeClient, get_pinecone_client
+from app.retrieval import (
+    PineconeBatchUpsertError,
+    PineconeClient,
+    get_pinecone_client,
+    rebuild_bm25_index,
+)
 
 logger = get_logger(__name__)
 
@@ -443,6 +448,16 @@ def _execute_pipeline_stages(
         processing_time_seconds=total_time,
         stage_timings=stage_timings,
     )
+
+    # Rebuild in-memory BM25 index to immediately incorporate new chunks
+    try:
+        rebuild_bm25_index(reg)
+    except Exception as bm25_exc:
+        logger.warning(
+            "BM25 index rebuild failed post-ingestion for doc '%s': %s",
+            document_id,
+            bm25_exc,
+        )
 
     return IngestionResult(
         document_id=document_id,
