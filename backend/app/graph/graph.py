@@ -1,18 +1,18 @@
 """
-LangGraph State Machine Topology & Execution Pipeline for Phase 37.
+LangGraph State Machine Topology & Execution Pipeline for Phases 37-39.
 
 Architecture & Design Decisions:
 1. Node Topology:
-   - `retrieve`: Executes hybrid retrieval + reranking to fetch top relevant context chunks.
+   - `retrieve`: Executes initial hybrid retrieval + reranking to fetch top relevant context chunks.
    - `generate`: Invokes LLM answer generator to produce citation-forced structured answer.
    - `verify`: Decomposes answer into atomic claims, maps to source chunks, and runs NLI verifier.
-   - `targeted_retrieve`: Targeted retry stub for ungrounded claims (TODO for Phase 38-41).
+   - `targeted_retrieve`: Re-retrieves specifically for failed claims using claim text as query and merges chunks.
    - `finalize`: Calculates overall aggregate response status ("verified", "partially_verified", "failed").
 
 2. Conditional Routing Edge (`correction_router`):
-   - Evaluates verification status of claims after `verify` node.
+   - Evaluates verification status of claims after `verify_node`.
    - If all claims are verified (or max retries reached), routes to `finalize`.
-   - If any claim is ungrounded / contradicted and retries remain, routes to `targeted_retrieve`.
+   - If any claim is ungrounded / contradicted / unverifiable and retries remain, routes to `targeted_retrieve`.
 """
 
 from __future__ import annotations
@@ -23,7 +23,9 @@ from langgraph.graph import END, StateGraph
 
 from app.core.logging import get_logger
 from app.generation.generator import generate_answer_with_citations
+from app.graph.routing import correction_router, get_failed_claims
 from app.graph.state import RAGState
+from app.graph.targeted_retrieve import targeted_retrieve_node
 from app.models.schemas import ClaimWithSource, GeneratedAnswer, RetrievalResult
 from app.reranking.reranker import select_relevant_chunks
 from app.retrieval.hybrid_retriever import hybrid_search
@@ -38,6 +40,7 @@ __all__ = [
     "correction_router",
     "finalize_node",
     "generate_node",
+    "get_failed_claims",
     "retrieve_node",
     "targeted_retrieve_node",
     "verify_node",
@@ -102,13 +105,6 @@ def verify_node(state: RAGState) -> dict[str, Any]:
     return {"claims": verified_claims}
 
 
-def targeted_retrieve_node(state: RAGState) -> dict[str, Any]:
-    """LangGraph Node STUB: Targeted re-retrieval stub for Phase 38-41 self-correction."""
-    retry_count = state.get("retry_count", 0) + 1
-    logger.info("--- LANGGRAPH NODE: TARGETED RETRIEVE (STUB Retry #%d) ---", retry_count)
-    return {"retry_count": retry_count}
-
-
 def finalize_node(state: RAGState) -> dict[str, Any]:
     """LangGraph Node: Calculate aggregate system status and prepare final output."""
     claims = state.get("claims", [])
@@ -127,32 +123,6 @@ def finalize_node(state: RAGState) -> dict[str, Any]:
 
     logger.info("Finalize node complete: System Final Status = '%s'.", final_status)
     return {"final_status": final_status}
-
-
-def correction_router(state: RAGState) -> str:
-    """LangGraph Conditional Edge: Route to 'finalize' or 'targeted_retrieve' retry loop."""
-    claims = state.get("claims", [])
-    retry_count = state.get("retry_count", 0)
-    max_retries = state.get("max_retries", 2)
-
-    statuses = [get_claim_final_status(c) for c in claims]
-    all_verified = bool(claims) and all(s == "verified" for s in statuses)
-
-    if all_verified or retry_count >= max_retries:
-        logger.info(
-            "Correction Router decision: 'finalize' (all_verified=%s, retry_count=%d/%d).",
-            all_verified,
-            retry_count,
-            max_retries,
-        )
-        return "finalize"
-
-    logger.info(
-        "Correction Router decision: 'targeted_retrieve' (unverified claims detected, retry %d/%d).",
-        retry_count + 1,
-        max_retries,
-    )
-    return "targeted_retrieve"
 
 
 def build_rag_graph() -> Any:

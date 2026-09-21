@@ -1,5 +1,5 @@
 """
-LangGraph state machine module package exports (Phase 37-41).
+LangGraph state machine module package exports (Phases 37-41).
 """
 
 from app.graph.graph import (
@@ -8,11 +8,14 @@ from app.graph.graph import (
     correction_router,
     finalize_node,
     generate_node,
+    get_failed_claims,
     retrieve_node,
     targeted_retrieve_node,
     verify_node,
 )
+from app.graph.routing import get_failed_claims
 from app.graph.state import RAGState
+from app.graph.targeted_retrieve import targeted_retrieve_node
 
 __all__ = [
     "RAGState",
@@ -21,6 +24,7 @@ __all__ = [
     "correction_router",
     "finalize_node",
     "generate_node",
+    "get_failed_claims",
     "retrieve_node",
     "targeted_retrieve_node",
     "verify_node",
