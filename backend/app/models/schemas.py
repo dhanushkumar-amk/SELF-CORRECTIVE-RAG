@@ -4,6 +4,7 @@ Pydantic schemas for request/response models.
 This file will be populated in later phases as endpoints are implemented.
 """
 
+import uuid
 from enum import Enum
 from typing import Any
 
@@ -28,6 +29,16 @@ class DocumentStatus(str, Enum):
     UPSERTING = "upserting"
     READY = "ready"
     FAILED = "failed"
+
+
+class VerificationStatus(str, Enum):
+    """Classification status of a claim after NLI premise-hypothesis verification."""
+
+    PENDING = "pending"
+    ENTAILED = "entailed"
+    CONTRADICTED = "contradicted"
+    NEUTRAL = "neutral"
+    UNVERIFIABLE = "unverifiable"
 
 
 # Map of valid status transitions in the document ingestion state machine
@@ -456,6 +467,7 @@ class GenerationError(Exception):
 class ClaimWithSource(BaseModel):
     """An atomic factual claim resolved against its underlying source chunk context."""
 
+    claim_id: str = Field(default_factory=lambda: str(uuid.uuid4()), description="Unique UUID for referencing individual claim in correction loop")
     claim_text: str = Field(description="Atomic factual statement or sentence")
     source_chunk_id: str = Field(description="Cited source chunk ID")
     source_text: str | None = Field(default=None, description="Full source chunk text for NLI premise verification")
@@ -464,6 +476,18 @@ class ClaimWithSource(BaseModel):
     is_valid_source: bool = Field(default=True, description="False if source_chunk_id is missing or hallucinated in retrieved context")
     document_id: str | None = Field(default=None, description="Parent document ID if resolved")
     filename: str | None = Field(default=None, description="Source PDF filename for citations")
+    verification_status: VerificationStatus | None = Field(default=None, description="Populated in Phase 34-35 by NLI verification logic")
+    confidence: float | None = Field(default=None, description="Populated in Phase 34-35 with NLI prediction confidence")
+
+
+class NLIScore(BaseModel):
+    """Raw logits and softmax probabilities returned by NLI DeBERTa CrossEncoder model."""
+
+    contradiction: float = Field(description="Probability/score for contradiction label")
+    entailment: float = Field(description="Probability/score for entailment label")
+    neutral: float = Field(description="Probability/score for neutral label")
+    predicted_label: VerificationStatus = Field(description="VerificationStatus enum label corresponding to highest NLI score")
+
 
 
 

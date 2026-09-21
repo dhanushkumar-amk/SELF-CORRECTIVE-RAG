@@ -91,6 +91,9 @@ class Settings(BaseSettings):
     LLM_PRIMARY_PROVIDER: str = "groq"
     LLM_FALLBACK_PROVIDER: str = "gemini"
 
+    # ── Verification & NLI (Phase 33+) ────────────────────────────────────
+    NLI_MODEL_NAME: str = "cross-encoder/nli-deberta-v3-base"
+
     # ── Observability: LangChain / LangSmith (Optional — Debugging) ───────
     # Observability platform for LangGraph traces: https://smith.langchain.com/
     LANGCHAIN_API_KEY: str = ""

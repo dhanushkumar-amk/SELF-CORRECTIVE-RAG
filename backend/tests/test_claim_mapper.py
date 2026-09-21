@@ -57,6 +57,7 @@ def test_map_claims_to_chunks_success(sample_retrieved_chunks):
     assert isinstance(mapped_claims[0], ClaimWithSource)
 
     # Claim 1 assertion
+    assert mapped_claims[0].claim_id is not None
     assert mapped_claims[0].claim_text == "SentenceTransformers models produce 384-dimensional dense vectors."
     assert mapped_claims[0].source_chunk_id == "chunk_101"
     assert mapped_claims[0].source_text == "SentenceTransformers models produce 384-dimensional dense vectors."

@@ -264,19 +264,19 @@ self-correcting-rag/
 - [x] **Phase 28:** Formal output parsing & defensive validation (`parse_llm_output()` & `sanitize_json_string()`)
 - [x] **Phase 29:** Malformed output handling & corrective retries (2 corrective retries on primary + Gemini fallback + terminal `GenerationError`)
 
-> 🧠 **Generation Layer (Phases 25–29) complete — Claim Processing next (Phases 30–32)**
+> 🧠 **Generation Layer (Phases 25–29) complete — Claim Processing complete (Phases 30–31)**
 
 ### Phase 30–31 — Claim Processing
 - [x] **Phase 30:** Sentence / claim splitter (`split_into_sentences()` & `is_atomic_claim()` sentence validation)
 - [x] **Phase 31:** Claim-to-chunk mapping logic (`map_claims_to_chunks()` & `ClaimWithSource` in-memory resolution)
 
-> 🔬 **Claim Processing (Phases 30–31) complete — Hallucination Verification next (Phases 32–36)**
+> 🔬 **Claim Processing (Phases 30–31) complete — NLI Verification group begins (Phases 32–36)**
 
 ### Phase 32–36 — Hallucination Verification
-- [ ] **Phase 32:** NLI model integration (CrossEncoder / DeBERTa NLI)
-- [ ] **Phase 33:** Claim-to-source NLI premise verification
-- [ ] **Phase 34:** Hallucination scoring & classification
-- [ ] **Phase 35:** Verification result schemas & confidence thresholds
+- [x] **Phase 32:** Claim data model design (`ClaimWithSource` with `claim_id` UUID & `VerificationStatus` enum)
+- [x] **Phase 33:** Local NLI model integration (`cross-encoder/nli-deberta-v3-base` inference engine & ground-truth label sanity check)
+- [x] **Phase 34:** Premise-hypothesis pairing logic (`build_verification_pairs()` & `VerificationPair` with `claim_id` traceability)
+- [x] **Phase 35:** Entailment/contradiction/neutral classification (`verify_claims()` batched NLI verification & `NEUTRAL` handling design)
 - [ ] **Phase 36:** Verification integration tests
 
 ### Phase 37–41 — LangGraph Self-Correction Loop
