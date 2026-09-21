@@ -259,18 +259,24 @@ self-correcting-rag/
 
 ### Phase 25–29 — Answer Generation
 - [x] **Phase 25:** LLM provider integration & failover client (`generate_answer()` Groq primary + Gemini fallback)
-- [ ] **Phase 26:** Prompt template design
-- [ ] **Phase 27:** Context-aware answer generation
-- [ ] **Phase 28:** Streaming response support
-- [ ] **Phase 29:** Generation integration tests
+- [x] **Phase 26:** Citation-forced prompt design (`CITATION_SYSTEM_PROMPT` & chunk citation formatting)
+- [x] **Phase 27:** Structured JSON output schema (`Claim` + `source_chunk_id` validation)
+- [x] **Phase 28:** Formal output parsing & defensive validation (`parse_llm_output()` & `sanitize_json_string()`)
+- [x] **Phase 29:** Malformed output handling & corrective retries (2 corrective retries on primary + Gemini fallback + terminal `GenerationError`)
 
-### Phase 30–36 — Hallucination Verification
-- [ ] **Phase 30:** NLI model integration
-- [ ] **Phase 31:** Claim extraction from generated answers
-- [ ] **Phase 32:** Claim-to-source verification
-- [ ] **Phase 33:** Hallucination scoring & classification
-- [ ] **Phase 34:** Verification result schemas
-- [ ] **Phase 35:** Confidence thresholds & configuration
+> 🧠 **Generation Layer (Phases 25–29) complete — Claim Processing next (Phases 30–32)**
+
+### Phase 30–31 — Claim Processing
+- [x] **Phase 30:** Sentence / claim splitter (`split_into_sentences()` & `is_atomic_claim()` sentence validation)
+- [x] **Phase 31:** Claim-to-chunk mapping logic (`map_claims_to_chunks()` & `ClaimWithSource` in-memory resolution)
+
+> 🔬 **Claim Processing (Phases 30–31) complete — Hallucination Verification next (Phases 32–36)**
+
+### Phase 32–36 — Hallucination Verification
+- [ ] **Phase 32:** NLI model integration (CrossEncoder / DeBERTa NLI)
+- [ ] **Phase 33:** Claim-to-source NLI premise verification
+- [ ] **Phase 34:** Hallucination scoring & classification
+- [ ] **Phase 35:** Verification result schemas & confidence thresholds
 - [ ] **Phase 36:** Verification integration tests
 
 ### Phase 37–41 — LangGraph Self-Correction Loop

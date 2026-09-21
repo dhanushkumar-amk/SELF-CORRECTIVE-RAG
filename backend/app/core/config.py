@@ -88,6 +88,8 @@ class Settings(BaseSettings):
     # Groq (Llama / OSS): https://console.groq.com/
     GROQ_API_KEY: str = ""
     DEFAULT_GROQ_MODEL: str = "openai/gpt-oss-120b"
+    LLM_PRIMARY_PROVIDER: str = "groq"
+    LLM_FALLBACK_PROVIDER: str = "gemini"
 
     # ── Observability: LangChain / LangSmith (Optional — Debugging) ───────
     # Observability platform for LangGraph traces: https://smith.langchain.com/

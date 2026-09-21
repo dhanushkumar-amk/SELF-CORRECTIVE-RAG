@@ -23,6 +23,9 @@ sentence-transformers
 pypdf
 tiktoken
 
+# ─── Verification & Claim Processing (Phase 30+) ───────────────────────────
+nltk
+
 # ─── Testing ─────────────────────────────────────────────────────────────────
 pytest
 pytest-asyncio

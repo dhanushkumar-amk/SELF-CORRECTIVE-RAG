@@ -453,6 +453,20 @@ class GenerationError(Exception):
         self.details = details or {}
 
 
+class ClaimWithSource(BaseModel):
+    """An atomic factual claim resolved against its underlying source chunk context."""
+
+    claim_text: str = Field(description="Atomic factual statement or sentence")
+    source_chunk_id: str = Field(description="Cited source chunk ID")
+    source_text: str | None = Field(default=None, description="Full source chunk text for NLI premise verification")
+    page_number: int | None = Field(default=None, description="Starting page number of source chunk (1-indexed)")
+    page_number_end: int | None = Field(default=None, description="Ending page number of source chunk (1-indexed)")
+    is_valid_source: bool = Field(default=True, description="False if source_chunk_id is missing or hallucinated in retrieved context")
+    document_id: str | None = Field(default=None, description="Parent document ID if resolved")
+    filename: str | None = Field(default=None, description="Source PDF filename for citations")
+
+
+
 
 
 
