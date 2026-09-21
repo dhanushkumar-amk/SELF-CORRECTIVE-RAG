@@ -93,6 +93,7 @@ class Settings(BaseSettings):
 
     # ── Verification & NLI (Phase 33+) ────────────────────────────────────
     NLI_MODEL_NAME: str = "cross-encoder/nli-deberta-v3-base"
+    NLI_CONFIDENCE_THRESHOLD: float = 0.85
 
     # ── Observability: LangChain / LangSmith (Optional — Debugging) ───────
     # Observability platform for LangGraph traces: https://smith.langchain.com/

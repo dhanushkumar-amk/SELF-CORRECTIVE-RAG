@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.models.schemas import ClaimWithSource, NLIScore, VerificationStatus
 from app.verification.nli_verifier import score_entailment_batch
@@ -32,8 +33,49 @@ from app.verification.pairing import build_verification_pairs
 logger = get_logger(__name__)
 
 __all__ = [
+    "get_claim_final_status",
     "verify_claims",
 ]
+
+
+def get_claim_final_status(
+    claim: ClaimWithSource,
+    threshold: float | None = None,
+) -> str:
+    """Return a simple, UI-ready final claim status label.
+
+    Categories:
+    - "verified": Claim is ENTAILED with confidence >= threshold (trustworthy).
+    - "needs_review": Claim is ENTAILED with confidence < threshold (borderline), or NEUTRAL (unsupported).
+    - "contradicted": Claim is CONTRADICTED by source context.
+    - "unverifiable": Claim source_chunk_id is invalid or missing.
+    - "pending": Claim verification is incomplete or pending.
+
+    Args:
+        claim: Input ClaimWithSource object.
+        threshold: Minimum confidence threshold for ENTAILED claims (defaults to settings.NLI_CONFIDENCE_THRESHOLD).
+
+    Returns:
+        One of "verified", "needs_review", "contradicted", "unverifiable", "pending".
+    """
+    conf_thresh = threshold if threshold is not None else settings.NLI_CONFIDENCE_THRESHOLD
+
+    if not claim.is_valid_source or claim.verification_status == VerificationStatus.UNVERIFIABLE:
+        return "unverifiable"
+
+    if claim.verification_status == VerificationStatus.CONTRADICTED:
+        return "contradicted"
+
+    if claim.verification_status == VerificationStatus.NEUTRAL:
+        return "needs_review"
+
+    if claim.verification_status == VerificationStatus.ENTAILED:
+        claim_conf = claim.confidence if claim.confidence is not None else 0.0
+        if claim_conf >= conf_thresh:
+            return "verified"
+        return "needs_review"
+
+    return "pending"
 
 
 def verify_claims(claims: list[ClaimWithSource]) -> list[ClaimWithSource]:
@@ -77,10 +119,11 @@ def verify_claims(claims: list[ClaimWithSource]) -> list[ClaimWithSource]:
             # Confidence is highest probability among entailment, contradiction, and neutral
             claim.confidence = max(score.entailment, score.contradiction, score.neutral)
             logger.info(
-                "Claim '%s' verified as %s (confidence: %.4f).",
+                "Claim '%s' verified as %s (confidence: %.4f). Final Status: '%s'.",
                 claim.claim_text[:40],
                 claim.verification_status.value.upper(),
                 claim.confidence,
+                get_claim_final_status(claim),
             )
 
     # 5. Log summary metrics

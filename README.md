@@ -277,14 +277,16 @@ self-correcting-rag/
 - [x] **Phase 33:** Local NLI model integration (`cross-encoder/nli-deberta-v3-base` inference engine & ground-truth label sanity check)
 - [x] **Phase 34:** Premise-hypothesis pairing logic (`build_verification_pairs()` & `VerificationPair` with `claim_id` traceability)
 - [x] **Phase 35:** Entailment/contradiction/neutral classification (`verify_claims()` batched NLI verification & `NEUTRAL` handling design)
-- [ ] **Phase 36:** Verification integration tests
+- [x] **Phase 36:** Confidence scoring per claim (`NLI_CONFIDENCE_THRESHOLD = 0.85` & `get_claim_final_status()`)
+
+> 🔬 **NLI Verification (Phases 32–36) complete — LangGraph Correction Loop begins (Phases 37–41)**
 
 ### Phase 37–41 — LangGraph Self-Correction Loop
-- [ ] **Phase 37:** LangGraph state definition
-- [ ] **Phase 38:** Graph nodes (retrieve → generate → verify)
-- [ ] **Phase 39:** Conditional edges & correction routing
-- [ ] **Phase 40:** Max retry & fallback logic
-- [ ] **Phase 41:** End-to-end graph integration tests
+- [x] **Phase 37:** LangGraph state machine design (`RAGState` TypedDict, `StateGraph` topology & stubbed retry flow)
+- [ ] **Phase 38:** Core Graph Node Implementations (Retrieve -> Generate -> Verify)
+- [ ] **Phase 39:** Conditional Edges & Correction Routing Logic
+- [ ] **Phase 40:** Max Retry, Fallback & Targeted Search Logic
+- [ ] **Phase 41:** End-to-End Graph Integration Tests
 
 ### Phase 42–46 — Frontend
 - [ ] **Phase 42:** Chat UI layout & components

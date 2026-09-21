@@ -9,7 +9,10 @@ from app.verification.claim_splitter import (
     is_atomic_claim,
     split_into_sentences,
 )
-from app.verification.claim_verifier import verify_claims
+from app.verification.claim_verifier import (
+    get_claim_final_status,
+    verify_claims,
+)
 from app.verification.nli_verifier import (
     NLIVerifier,
     get_nli_verifier,
@@ -30,6 +33,7 @@ __all__ = [
     "VerificationStatus",
     "build_verification_pairs",
     "ensure_atomic_claims",
+    "get_claim_final_status",
     "get_nli_verifier",
     "is_atomic_claim",
     "map_claims_to_chunks",
