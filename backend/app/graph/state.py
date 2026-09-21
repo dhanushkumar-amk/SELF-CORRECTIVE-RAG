@@ -23,6 +23,7 @@ class RAGState(TypedDict, total=False):
     """Shared state container passed between nodes in the self-correcting RAG state machine."""
 
     query: str
+    document_id: str | None
     retrieved_chunks: list[RetrievalResult]
     generated_answer: GeneratedAnswer | None
     claims: list[ClaimWithSource]

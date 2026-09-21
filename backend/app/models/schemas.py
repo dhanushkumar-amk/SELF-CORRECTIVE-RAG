@@ -489,6 +489,35 @@ class NLIScore(BaseModel):
     predicted_label: VerificationStatus = Field(description="VerificationStatus enum label corresponding to highest NLI score")
 
 
+class ErrorResponse(BaseModel):
+    """Standardized API error response payload across all endpoints."""
+
+    error: str = Field(description="High-level error classification code")
+    detail: str = Field(description="Detailed human-readable error explanation")
+    status_code: int = Field(description="HTTP status code")
+
+
+class QueryRequest(BaseModel):
+    """Request payload for executing a RAG query through the self-correction graph."""
+
+    query: str = Field(min_length=1, description="Natural language user question")
+    document_id: str | None = Field(default=None, description="Optional document UUID for single-document retrieval scoping")
+    stream: bool = Field(default=True, description="True to stream state machine progress via Server-Sent Events (SSE), False for JSON response")
+
+
+class QueryResponse(BaseModel):
+    """Structured response payload returned by non-streaming query execution."""
+
+    query: str = Field(description="Original user query")
+    final_status: str = Field(description="Aggregate system verification status ('fully_verified', 'partially_verified', 'unverifiable')")
+    final_answer_text: str = Field(description="Synthesized final user-facing answer text")
+    claims: list[ClaimWithSource] = Field(default_factory=list, description="List of atomic claims with verification statuses and confidence scores")
+    retry_count: int = Field(default=0, description="Total self-correction retries executed")
+    retrieved_chunks: list[RetrievalResult] = Field(default_factory=list, description="Final context chunks used for answer generation")
+    latency_ms: float = Field(default=0.0, description="Total execution latency in milliseconds")
+
+
+
 
 
 

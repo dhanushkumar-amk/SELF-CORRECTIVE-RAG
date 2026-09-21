@@ -59,11 +59,11 @@ def retrieve_node(state: RAGState) -> dict[str, Any]:
     query = state.get("query", "")
     logger.info("--- LANGGRAPH NODE: RETRIEVE --- (Query: '%s')", query[:50])
 
-    if not query:
-        return {"retrieved_chunks": []}
+    doc_id = state.get("document_id")
+    filter_dict = {"document_id": doc_id} if doc_id else None
 
     # 1. Hybrid search (Dense Pinecone + Sparse BM25 + RRF)
-    raw_results = hybrid_search(query=query)
+    raw_results = hybrid_search(query=query, filter=filter_dict)
 
     # 2. Threshold-based CrossEncoder reranking
     rerank_res = select_relevant_chunks(query=query, candidates=raw_results)
