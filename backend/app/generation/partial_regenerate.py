@@ -16,7 +16,7 @@ Architecture & Design Decisions:
 from __future__ import annotations
 
 from app.core.logging import get_logger
-from app.generation.llm_client import generate
+from app.generation.llm_client import generate_answer
 from app.generation.output_parser import parse_llm_output
 from app.generation.prompts import (
     PARTIAL_REGENERATE_SYSTEM_PROMPT,
@@ -65,18 +65,29 @@ def regenerate_failed_claims(
         chunks=enriched_chunks,
     )
 
-    llm_res = generate(
+    llm_res = generate_answer(
         prompt=user_prompt,
         system_prompt=PARTIAL_REGENERATE_SYSTEM_PROMPT,
     )
 
-    parsed_answer = parse_llm_output(llm_res.content, chunks=enriched_chunks)
-    logger.info(
-        "Partial regeneration complete: %d corrected claims produced.",
-        len(parsed_answer.claims),
+    valid_ids = {c.chunk_id for c in enriched_chunks if hasattr(c, "chunk_id")}
+    parsed = parse_llm_output(
+        llm_res.content,
+        valid_chunk_ids=valid_ids,
+        provider=llm_res.provider,
+        model_name=llm_res.model_name,
+        latency_ms=llm_res.latency_ms,
     )
 
-    return parsed_answer.claims
+    if isinstance(parsed, GeneratedAnswer):
+        logger.info(
+            "Partial regeneration complete: %d corrected claims produced.",
+            len(parsed.claims),
+        )
+        return parsed.claims
+
+    logger.warning("Partial regeneration output parsing failed: %s", parsed)
+    return []
 
 
 def merge_corrected_claims(

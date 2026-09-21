@@ -29,7 +29,7 @@ def test_regenerate_failed_claims_calls_llm_and_parses():
 
     mock_json = '{"claims": [{"claim_text": "Acme acquired Beta AI Inc for $200 million.", "source_chunk_id": "chunk-2"}], "insufficient_information": false}'
 
-    with patch("app.generation.partial_regenerate.generate") as mock_gen:
+    with patch("app.generation.partial_regenerate.generate_answer") as mock_gen:
         mock_gen.return_value = LLMResponse(
             content=mock_json,
             provider="groq",

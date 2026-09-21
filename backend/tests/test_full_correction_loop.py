@@ -81,7 +81,7 @@ def test_full_correction_loop_end_to_end_success():
          patch("app.graph.graph.generate_answer_with_citations") as mock_gen, \
          patch("app.graph.targeted_retrieve.hybrid_search") as mock_targeted_hybrid, \
          patch("app.graph.targeted_retrieve.select_relevant_chunks") as mock_targeted_rerank, \
-         patch("app.generation.partial_regenerate.generate") as mock_partial_llm:
+         patch("app.generation.partial_regenerate.generate_answer") as mock_partial_llm:
 
         # Step 1: Initial retrieval
         mock_hybrid.return_value = [chunk1, chunk2]
