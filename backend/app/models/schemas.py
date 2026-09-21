@@ -8,7 +8,7 @@ import uuid
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class HealthResponse(BaseModel):
@@ -503,6 +503,15 @@ class QueryRequest(BaseModel):
     query: str = Field(min_length=1, description="Natural language user question")
     document_id: str | None = Field(default=None, description="Optional document UUID for single-document retrieval scoping")
     stream: bool = Field(default=True, description="True to stream state machine progress via Server-Sent Events (SSE), False for JSON response")
+
+    @field_validator("query", mode="before")
+    @classmethod
+    def _sanitize_query(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("Query string cannot be empty or whitespace-only.")
+        return v
 
 
 class QueryResponse(BaseModel):

@@ -2,7 +2,7 @@
 Self-Correcting RAG with Hallucination Detection — FastAPI Entrypoint.
 
 This module bootstraps the FastAPI application, registers API routers,
-and configures CORS middleware.
+configures CORS and correlation ID middleware, and registers centralized error handlers.
 """
 
 from collections.abc import AsyncIterator
@@ -13,7 +13,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import debug, health, ingest, query
 from app.core.config import settings
+from app.core.exceptions import register_exception_handlers
 from app.core.logging import get_logger
+from app.core.middleware import CorrelationIdAndTimingMiddleware
 from app.retrieval import get_bm25_index
 
 logger = get_logger(__name__)
@@ -50,8 +52,11 @@ app = FastAPI(
 )
 
 # ---------------------------------------------------------------------------
-# CORS Middleware
+# Centralized Error Handlers & Middleware
 # ---------------------------------------------------------------------------
+register_exception_handlers(app)
+
+app.add_middleware(CorrelationIdAndTimingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,

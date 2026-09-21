@@ -290,12 +290,15 @@ self-correcting-rag/
 
 > 🔄 **LangGraph Self-Correction Loop (Phases 37–41) complete** — the core self-correcting mechanism is fully functional. Backend API next (Phases 42–45)!
 
-### Phase 42–46 — Frontend
-- [ ] **Phase 42:** Chat UI layout & components
-- [ ] **Phase 43:** Query submission & streaming display
-- [ ] **Phase 44:** Source citation display
-- [ ] **Phase 45:** Hallucination confidence indicators
-- [ ] **Phase 46:** Document upload interface
+### Phase 42–45 — Backend API, SSE Streaming & Error Handling
+- [x] **Phase 42:** FastAPI route design (`POST /api/v1/query` endpoint, consolidated `/api/v1/documents` routes, standardized Pydantic error models)
+- [x] **Phase 43:** SSE streaming implementation (`stream_query_execution()` SSE stream generator, real-time `correction_triggered` progress events & stream error handling)
+- [x] **Phase 44:** Request/response models (`QueryRequest` string sanitization, `QueryResponse`, `ErrorResponse` & OpenAPI validation)
+- [x] **Phase 45:** API error handling & logging (`register_exception_handlers()` global handlers, `CorrelationIdAndTimingMiddleware` tracing & timing)
+
+> 📡 **Backend API Layer (Phases 42–45) complete** — Frontend UI & Citation Display next (Phases 46–48)!
+
+### Phase 44–46 — Frontend & Citation UI
 
 ### Phase 47–50 — Polish & Production
 - [ ] **Phase 47:** Performance optimization & caching
