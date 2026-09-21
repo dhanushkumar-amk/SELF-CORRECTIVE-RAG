@@ -22,6 +22,7 @@ Architecture & Design Decisions:
 
 from __future__ import annotations
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.graph.state import RAGState
 from app.models.schemas import ClaimWithSource
@@ -71,7 +72,7 @@ def correction_router(state: RAGState) -> str:
     """
     claims = state.get("claims", [])
     retry_count = state.get("retry_count", 0)
-    max_retries = state.get("max_retries", 2)
+    max_retries = state.get("max_retries", settings.CORRECTION_MAX_RETRIES)
 
     failed_claims = get_failed_claims(claims)
     all_verified = bool(claims) and len(failed_claims) == 0

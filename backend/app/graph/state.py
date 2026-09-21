@@ -29,4 +29,5 @@ class RAGState(TypedDict, total=False):
     retry_count: int
     max_retries: int
     final_status: str
+    final_answer_text: str | None
     error_message: str | None

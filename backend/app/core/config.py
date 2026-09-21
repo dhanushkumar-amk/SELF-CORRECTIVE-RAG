@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     NLI_MODEL_NAME: str = "cross-encoder/nli-deberta-v3-base"
     NLI_CONFIDENCE_THRESHOLD: float = 0.85
 
+    # ── Correction Loop (Phase 40–41) ─────────────────────────────────────
+    CORRECTION_MAX_RETRIES: int = 2
+
     # ── Observability: LangChain / LangSmith (Optional — Debugging) ───────
     # Observability platform for LangGraph traces: https://smith.langchain.com/
     LANGCHAIN_API_KEY: str = ""

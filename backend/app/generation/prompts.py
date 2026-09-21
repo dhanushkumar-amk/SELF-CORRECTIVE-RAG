@@ -1,5 +1,5 @@
 """
-Citation-Forced Prompt Templates for Grounded RAG Answer Generation.
+Citation-Forced & Partial Regeneration Prompt Templates for Grounded RAG.
 
 Design Principles:
 1. Strict Grounding & Zero Outside Knowledge:
@@ -13,22 +13,19 @@ Design Principles:
 3. Citation Enforcement:
    Every factual sentence must be tagged with the exact `source_chunk_id` from which it was drawn.
 
-4. Explicit Refusal for Insufficient Context:
-   If the context chunks do not contain enough information, the model must output
-   `"insufficient_information": true` and `"claims": []` rather than guessing.
-
-5. Structured JSON Output Schema:
-   Instructs the model to output ONLY valid JSON without preambles or conversational commentary.
+4. Partial Regeneration (Phase 40):
+   Targeted system prompt to correct only specific failed statements using enriched context chunks.
 """
 
 from __future__ import annotations
 
-from typing import Any
 from app.models.schemas import RetrievalResult
 
 __all__ = [
     "CITATION_SYSTEM_PROMPT",
+    "PARTIAL_REGENERATE_SYSTEM_PROMPT",
     "build_citation_user_prompt",
+    "build_partial_regenerate_user_prompt",
 ]
 
 CITATION_SYSTEM_PROMPT: str = """You are a precise, grounded RAG answer generation engine.
@@ -55,17 +52,33 @@ JSON SCHEMA:
   "insufficient_information": false
 }"""
 
+PARTIAL_REGENERATE_SYSTEM_PROMPT: str = """You are a precise RAG self-correction engine.
+Your sole task is to re-answer or correct SPECIFIC failed factual statements using an enriched context chunk set.
+
+STRICT OPERATIONAL RULES:
+1. TARGETED CORRECTION: You are given the original user question, a list of SPECIFIC statements that failed verification (contradicted, ungrounded, or improperly cited), and context chunks.
+2. Produce corrected, grounded factual statements ONLY for the failed statements. Do not re-answer parts of the question that were already correctly answered.
+3. GROUNDING & CITATION: Every corrected statement MUST be drawn strictly from the provided context chunks and tagged with the exact `source_chunk_id` of the chunk supporting it.
+4. If a failed statement cannot be supported by any available chunk, omit it or rephrase it to reflect what the context actually states.
+5. CHUNK ID INTEGRITY: Use ONLY `source_chunk_id` values that explicitly appear in the input context. Never invent or hallucinate new chunk IDs.
+
+OUTPUT FORMAT REQUIREMENTS:
+You MUST respond ONLY with a single valid JSON object. Do not include markdown code fences (```json), preambles, explanations, or conversational filler.
+
+JSON SCHEMA:
+{
+  "claims": [
+    {
+      "claim_text": "<Corrected factual sentence>",
+      "source_chunk_id": "<Exact chunk_id from input>"
+    }
+  ],
+  "insufficient_information": false
+}"""
+
 
 def build_citation_user_prompt(query: str, chunks: list[RetrievalResult]) -> str:
-    """Format user query and candidate retrieval chunks into a citation-anchored prompt string.
-
-    Args:
-        query: Natural language user query.
-        chunks: List of candidate RetrievalResult objects containing metadata and source_text.
-
-    Returns:
-        Formatted user prompt string with chunk_id anchors.
-    """
+    """Format user query and candidate retrieval chunks into a citation-anchored prompt string."""
     formatted_chunks: list[str] = []
     for c in chunks:
         cid = c.chunk_id
@@ -85,3 +98,34 @@ USER QUERY:
 {query}
 
 Respond strictly in the required JSON format."""
+
+
+def build_partial_regenerate_user_prompt(
+    query: str,
+    failed_statements: list[str],
+    chunks: list[RetrievalResult],
+) -> str:
+    """Format user query, targeted failed statements, and enriched candidate chunks into a partial-regeneration prompt."""
+    formatted_chunks: list[str] = []
+    for c in chunks:
+        cid = c.chunk_id
+        text = str(
+            c.metadata.get("source_text")
+            or c.metadata.get("text")
+            or ""
+        ).strip()
+        formatted_chunks.append(f"[chunk_id: {cid}]\n{text}\n---")
+
+    chunks_block = "\n".join(formatted_chunks) if formatted_chunks else "No context chunks available."
+    failed_block = "\n".join(f"- {stmt}" for stmt in failed_statements) if failed_statements else "None"
+
+    return f"""ENRICHED CONTEXT CHUNKS:
+{chunks_block}
+
+ORIGINAL USER QUERY:
+{query}
+
+STATEMENTS REQUIRING CORRECTION:
+{failed_block}
+
+Provide corrected, grounded factual statements in the required JSON format."""

@@ -1,18 +1,22 @@
 """
-LangGraph State Machine Topology & Execution Pipeline for Phases 37-39.
+LangGraph State Machine Topology & Execution Pipeline for Phases 37-41.
 
 Architecture & Design Decisions:
-1. Node Topology:
-   - `retrieve`: Executes initial hybrid retrieval + reranking to fetch top relevant context chunks.
+1. Complete Node Topology:
+   - `retrieve`: Executes initial hybrid retrieval + CrossEncoder reranking to fetch top context chunks.
    - `generate`: Invokes LLM answer generator to produce citation-forced structured answer.
    - `verify`: Decomposes answer into atomic claims, maps to source chunks, and runs NLI verifier.
    - `targeted_retrieve`: Re-retrieves specifically for failed claims using claim text as query and merges chunks.
-   - `finalize`: Calculates overall aggregate response status ("verified", "partially_verified", "failed").
+   - `regenerate`: Executes targeted partial re-generation for failed claims using enriched context.
+   - `finalize`: Calculates overall aggregate response status ("fully_verified", "partially_verified", "unverifiable") and synthesizes answer text.
 
-2. Conditional Routing Edge (`correction_router`):
-   - Evaluates verification status of claims after `verify_node`.
-   - If all claims are verified (or max retries reached), routes to `finalize`.
-   - If any claim is ungrounded / contradicted / unverifiable and retries remain, routes to `targeted_retrieve`.
+2. Loop Topology:
+   - `retrieve` -> `generate` -> `verify`
+   - `verify` -> `correction_router`:
+       - If all claims verified or retries exhausted -> `finalize`
+       - If failed claims & retries remain -> `targeted_retrieve`
+   - `targeted_retrieve` -> `regenerate` -> `verify` (loops back to verify updated claims)
+   - `finalize` -> `END`
 """
 
 from __future__ import annotations
@@ -23,14 +27,16 @@ from langgraph.graph import END, StateGraph
 
 from app.core.logging import get_logger
 from app.generation.generator import generate_answer_with_citations
+from app.graph.finalize import finalize_node
+from app.graph.regenerate import regenerate_node
 from app.graph.routing import correction_router, get_failed_claims
 from app.graph.state import RAGState
 from app.graph.targeted_retrieve import targeted_retrieve_node
-from app.models.schemas import ClaimWithSource, GeneratedAnswer, RetrievalResult
+from app.models.schemas import GeneratedAnswer
 from app.reranking.reranker import select_relevant_chunks
 from app.retrieval.hybrid_retriever import hybrid_search
 from app.verification.claim_mapper import map_claims_to_chunks
-from app.verification.claim_verifier import get_claim_final_status, verify_claims
+from app.verification.claim_verifier import verify_claims
 
 logger = get_logger(__name__)
 
@@ -41,6 +47,7 @@ __all__ = [
     "finalize_node",
     "generate_node",
     "get_failed_claims",
+    "regenerate_node",
     "retrieve_node",
     "targeted_retrieve_node",
     "verify_node",
@@ -89,40 +96,23 @@ def generate_node(state: RAGState) -> dict[str, Any]:
 def verify_node(state: RAGState) -> dict[str, Any]:
     """LangGraph Node: Decompose claims, map to source chunks, and run NLI verification."""
     answer = state.get("generated_answer")
+    existing_claims = state.get("claims", [])
     chunks = state.get("retrieved_chunks", [])
     logger.info("--- LANGGRAPH NODE: VERIFY ---")
 
-    if not answer:
+    # If state already has claims from a partial regeneration pass, use those
+    if existing_claims:
+        claims_to_verify = existing_claims
+    elif answer:
+        claims_to_verify = map_claims_to_chunks(answer, chunks)
+    else:
         return {"claims": []}
 
-    # 1. Map claims to source chunk context
-    mapped_claims = map_claims_to_chunks(answer, chunks)
+    # Run batched NLI verification engine across claims
+    verified_claims = verify_claims(claims_to_verify)
 
-    # 2. Run batched NLI verification engine
-    verified_claims = verify_claims(mapped_claims)
-
-    logger.info("Verify node complete: %d claims processed.", len(verified_claims))
+    logger.info("Verify node complete: %d claims verified.", len(verified_claims))
     return {"claims": verified_claims}
-
-
-def finalize_node(state: RAGState) -> dict[str, Any]:
-    """LangGraph Node: Calculate aggregate system status and prepare final output."""
-    claims = state.get("claims", [])
-    logger.info("--- LANGGRAPH NODE: FINALIZE ---")
-
-    if not claims:
-        final_status = "unverifiable"
-    else:
-        statuses = [get_claim_final_status(c) for c in claims]
-        if all(s == "verified" for s in statuses):
-            final_status = "verified"
-        elif any(s in ("contradicted", "needs_review") for s in statuses):
-            final_status = "partially_verified"
-        else:
-            final_status = "unverifiable"
-
-    logger.info("Finalize node complete: System Final Status = '%s'.", final_status)
-    return {"final_status": final_status}
 
 
 def build_rag_graph() -> Any:
@@ -134,9 +124,10 @@ def build_rag_graph() -> Any:
     workflow.add_node("generate", generate_node)
     workflow.add_node("verify", verify_node)
     workflow.add_node("targeted_retrieve", targeted_retrieve_node)
+    workflow.add_node("regenerate", regenerate_node)
     workflow.add_node("finalize", finalize_node)
 
-    # Wire Edges
+    # Wire Entry & Base Edges
     workflow.set_entry_point("retrieve")
     workflow.add_edge("retrieve", "generate")
     workflow.add_edge("generate", "verify")
@@ -151,10 +142,11 @@ def build_rag_graph() -> Any:
         },
     )
 
-    # Loop back from targeted_retrieve -> generate
-    workflow.add_edge("targeted_retrieve", "generate")
+    # Correction Loop Back Edges
+    workflow.add_edge("targeted_retrieve", "regenerate")
+    workflow.add_edge("regenerate", "verify")
 
-    # Finalize -> END
+    # Terminal Edge
     workflow.add_edge("finalize", END)
 
     return workflow.compile()

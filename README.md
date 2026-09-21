@@ -283,10 +283,10 @@ self-correcting-rag/
 
 ### Phase 37–41 — LangGraph Self-Correction Loop
 - [x] **Phase 37:** LangGraph state machine design (`RAGState` TypedDict, `StateGraph` topology & stubbed retry flow)
-- [ ] **Phase 38:** Core Graph Node Implementations (Retrieve -> Generate -> Verify)
-- [ ] **Phase 39:** Conditional Edges & Correction Routing Logic
-- [ ] **Phase 40:** Max Retry, Fallback & Targeted Search Logic
-- [ ] **Phase 41:** End-to-End Graph Integration Tests
+- [x] **Phase 38:** Conditional routing (`correction_router` pass/fail verification edge & `get_failed_claims()` filtering)
+- [x] **Phase 39:** Targeted re-retrieval for failed claims (`targeted_retrieve_node()` claim-as-query search, chunk deduplication & "nothing new found" logging)
+- [ ] **Phase 40:** Answer re-generation with targeted context & retry cap enforcement
+- [ ] **Phase 41:** End-to-End Self-Correction Loop Integration Tests & Tracing
 
 ### Phase 42–46 — Frontend
 - [ ] **Phase 42:** Chat UI layout & components
