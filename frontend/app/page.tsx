@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import { Navbar } from "@/components/Navbar";
 import { HeroSection } from "@/components/HeroSection";
 import { FeaturesSection } from "@/components/FeaturesSection";
@@ -19,30 +20,32 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-indigo-500/30 selection:text-indigo-200">
-      {/* Top Navbar */}
-      <Navbar onNavigateToApp={scrollToSandbox} />
+    <ThemeProvider>
+      <div className="min-h-screen bg-background text-foreground flex flex-col selection:bg-primary selection:text-primary-foreground transition-colors duration-200">
+        {/* Top Navbar */}
+        <Navbar onNavigateToApp={scrollToSandbox} />
 
-      {/* Main Page Layout */}
-      <main className="flex-1">
-        {/* Minimal Startup Hero Landing Section */}
-        <HeroSection onLaunchSandbox={scrollToSandbox} />
+        {/* Main Content */}
+        <main className="flex-1">
+          {/* Hero Section */}
+          <HeroSection onLaunchSandbox={scrollToSandbox} />
 
-        {/* 4 Subsystem Features & Architecture */}
-        <FeaturesSection />
+          {/* Features Grid */}
+          <FeaturesSection />
 
-        {/* Document Ingestion & Knowledge Base Manager */}
-        <DocumentManager
-          selectedDocumentId={selectedDocumentId}
-          onSelectDocument={(docId) => setSelectedDocumentId(docId)}
-        />
+          {/* Knowledge Base & Document Management */}
+          <DocumentManager
+            selectedDocumentId={selectedDocumentId}
+            onSelectDocument={(docId) => setSelectedDocumentId(docId)}
+          />
 
-        {/* Interactive Query Sandbox & Real-time SSE Stream Console */}
-        <QueryConsole selectedDocumentId={selectedDocumentId} />
-      </main>
+          {/* Interactive Console & Analytics Charts */}
+          <QueryConsole selectedDocumentId={selectedDocumentId} />
+        </main>
 
-      {/* Minimal Startup Footer */}
-      <Footer />
-    </div>
+        {/* Footer */}
+        <Footer />
+      </div>
+    </ThemeProvider>
   );
 }

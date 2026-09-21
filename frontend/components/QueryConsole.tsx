@@ -17,8 +17,10 @@ import {
   ExternalLink,
   Zap,
   SlidersHorizontal,
+  BarChart2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AnalyticsCharts } from "@/components/AnalyticsCharts";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -72,6 +74,7 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
   const [query, setQuery] = useState("");
   const [enableCorrection, setEnableCorrection] = useState(true);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(true);
 
   const [activeStep, setActiveStep] = useState<
     "idle" | "retrieving" | "generating" | "verifying" | "correcting" | "completed" | "error"
@@ -220,67 +223,81 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
   };
 
   return (
-    <section id="sandbox" className="py-16 border-t border-white/[0.08] relative">
-      <div className="mx-auto max-w-5xl px-4 sm:px-6">
+    <section id="sandbox" className="py-14 border-b border-border">
+      <div className="mx-auto max-w-5xl px-4 sm:px-6 space-y-6">
         {/* Header & Controls */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <span className="rounded-full bg-white/[0.06] px-2.5 py-0.5 text-[10px] font-mono text-zinc-400 border border-white/[0.08]">
+            <div className="flex items-center gap-2 font-mono text-xs">
+              <span className="rounded bg-muted px-2 py-0.5 text-muted-foreground border border-border">
                 Interactive Playground
               </span>
               {selectedDocumentId && (
-                <span className="text-[10px] font-mono text-[#0a84ff] bg-[#0a84ff]/10 px-2 py-0.5 rounded-full border border-[#0a84ff]/20">
+                <span className="text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
                   Target: {selectedDocumentId.slice(0, 8)}...
                 </span>
               )}
             </div>
-            <h2 className="text-2xl font-bold tracking-tight text-white mt-1.5 flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-[#0a84ff]" /> Self-Correcting RAG Console
+            <h2 className="text-2xl font-bold tracking-tight text-foreground font-mono mt-1 flex items-center gap-2">
+              <Sparkles className="h-5 w-5 text-primary" /> Self-Correcting RAG Console
             </h2>
           </div>
 
-          <div className="flex items-center gap-2 bg-white/[0.03] p-2 rounded-full border border-white/[0.08] backdrop-blur-xl">
-            <SlidersHorizontal className="h-3.5 w-3.5 text-zinc-400 ml-1" />
-            <span className="text-xs text-zinc-300 font-medium">NLI Self-Correction Loop</span>
-            <button
-              type="button"
-              onClick={() => setEnableCorrection(!enableCorrection)}
-              className={`relative inline-flex h-4.5 w-8 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out ${
-                enableCorrection ? "bg-[#0071e3]" : "bg-white/20"
-              }`}
+          <div className="flex items-center gap-3 font-mono text-xs">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowAnalytics(!showAnalytics)}
+              className="border-border text-xs"
             >
-              <span
-                className={`pointer-events-none inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition duration-200 ease-in-out ${
-                  enableCorrection ? "translate-x-3.5" : "translate-x-0"
+              <BarChart2 className="mr-1.5 h-3.5 w-3.5 text-primary" />
+              {showAnalytics ? "Hide Charts" : "Show Analytics"}
+            </Button>
+
+            <div className="flex items-center gap-2 bg-muted p-1.5 rounded-lg border border-border">
+              <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-foreground font-medium">NLI Self-Correction Loop</span>
+              <button
+                type="button"
+                onClick={() => setEnableCorrection(!enableCorrection)}
+                className={`relative inline-flex h-4 w-7 shrink-0 cursor-pointer rounded-full border border-transparent transition-colors duration-200 ease-in-out ${
+                  enableCorrection ? "bg-primary" : "bg-muted-foreground/30"
                 }`}
-              />
-            </button>
+              >
+                <span
+                  className={`pointer-events-none inline-block h-3 w-3 transform rounded-full bg-background shadow transition duration-200 ease-in-out ${
+                    enableCorrection ? "translate-x-3" : "translate-x-0"
+                  }`}
+                />
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Sample Prompt Shortcuts */}
-        <div className="mb-5 flex flex-wrap items-center gap-2">
-          <span className="text-xs text-zinc-500 mr-1">Prompts:</span>
+        <div className="flex flex-wrap items-center gap-2 font-mono">
+          <span className="text-xs text-muted-foreground mr-1 font-sans">Prompt Shortcuts:</span>
           {SAMPLE_QUERIES.map((sample) => (
-            <button
+            <Button
               key={sample.label}
+              variant="outline"
+              size="xs"
               onClick={() => {
                 setQuery(sample.query);
                 handleRunQuery(sample.query);
               }}
               disabled={isStreaming}
-              className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-zinc-300 hover:bg-white/[0.08] hover:text-white transition-all"
+              className="border-border text-xs text-foreground hover:bg-muted"
             >
-              <Search className="h-3 w-3 text-[#0a84ff]" />
-              <span>{sample.label}</span>
-            </button>
+              <Search className="mr-1 h-3 w-3 text-primary" />
+              {sample.label}
+            </Button>
           ))}
         </div>
 
-        {/* Apple Spotlight Search Bar */}
-        <div className="relative mb-8">
-          <div className="relative flex items-center rounded-2xl border border-white/15 bg-white/[0.03] shadow-2xl backdrop-blur-2xl focus-within:border-[#0a84ff] focus-within:ring-2 focus-within:ring-[#0a84ff]/20 transition-all">
+        {/* Search Console Input Bar */}
+        <div className="relative">
+          <div className="relative flex items-center rounded-xl border border-border bg-card shadow-sm focus-within:border-primary focus-within:ring-1 focus-within:ring-primary transition-all">
             <input
               type="text"
               value={query}
@@ -288,17 +305,19 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !isStreaming) handleRunQuery();
               }}
-              placeholder="Ask document question (e.g. 'What were Q3 revenues and YoY growth?')..."
-              className="w-full bg-transparent px-5 py-3.5 text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+              placeholder="Ask document query (e.g. 'What were Q3 revenues and YoY growth rate?')..."
+              className="w-full bg-transparent px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none font-sans"
             />
             <Button
+              variant="default"
+              size="sm"
               onClick={() => handleRunQuery()}
               disabled={isStreaming || !query.trim()}
-              className="mr-2.5 bg-[#0071e3] hover:bg-[#0077ed] text-white font-medium text-xs rounded-xl px-4 h-9 shadow-sm"
+              className="mr-2 font-mono text-xs"
             >
               {isStreaming ? (
                 <>
-                  <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Running...
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Processing...
                 </>
               ) : (
                 <>
@@ -309,26 +328,36 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
           </div>
         </div>
 
-        {/* SSE Pipeline Timeline */}
+        {/* Analytics Charts Subsystem */}
+        {showAnalytics && (
+          <AnalyticsCharts
+            claims={finalOutput?.claims}
+            executionTimeMs={finalOutput?.execution_time_ms}
+            totalClaimsCount={finalOutput?.total_claims_count}
+            verifiedCount={finalOutput?.verified_claims_count}
+          />
+        )}
+
+        {/* Pipeline Step Timeline */}
         {(isStreaming || activeStep !== "idle") && (
-          <div className="mb-8 rounded-3xl border border-white/[0.08] bg-white/[0.02] p-6 backdrop-blur-2xl">
-            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3 mb-4">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-[#0a84ff] flex items-center gap-1.5">
-                <Zap className="h-3.5 w-3.5" /> LangGraph State Pipeline
+          <div className="rounded-xl border border-border bg-card p-5 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between border-b border-border pb-2.5 font-mono">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-1.5">
+                <Zap className="h-3.5 w-3.5" /> LangGraph SSE Execution Pipeline
               </h3>
-              <span className="text-[10px] font-mono text-zinc-500 uppercase">
-                State: <span className="text-white font-semibold">{activeStep}</span>
+              <span className="text-[10px] text-muted-foreground uppercase">
+                State: <span className="text-foreground font-bold">{activeStep}</span>
               </span>
             </div>
 
             {/* Step Pills */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 font-mono">
               {[
                 { id: "retrieving", label: "Hybrid Search", icon: Search },
                 { id: "generating", label: "Generation", icon: FileText },
                 { id: "verifying", label: "DeBERTa NLI", icon: ShieldCheck },
                 { id: "correcting", label: "Correction Loop", icon: RefreshCw },
-                { id: "completed", label: "Verified Response", icon: CheckCircle2 },
+                { id: "completed", label: "Verified Output", icon: CheckCircle2 },
               ].map((step) => {
                 const Icon = step.icon;
                 const isCurrent = activeStep === step.id;
@@ -342,26 +371,26 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
                 return (
                   <div
                     key={step.id}
-                    className={`flex items-center gap-2 p-2 rounded-xl border text-[11px] font-medium transition-all ${
+                    className={`flex items-center gap-1.5 p-2 rounded-lg border text-[11px] font-medium transition-all ${
                       isCurrent
-                        ? "border-[#0a84ff] bg-[#0a84ff]/20 text-white animate-pulse"
+                        ? "border-primary bg-primary/10 text-primary font-bold animate-pulse"
                         : isPassed
-                        ? "border-[#30d158]/30 bg-[#30d158]/10 text-[#30d158]"
-                        : "border-white/[0.06] bg-white/[0.02] text-zinc-500"
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        : "border-border bg-muted/30 text-muted-foreground"
                     }`}
                   >
-                    <Icon className={`h-3.5 w-3.5 ${isCurrent ? "animate-spin text-[#0a84ff]" : ""}`} />
+                    <Icon className={`h-3.5 w-3.5 ${isCurrent ? "animate-spin text-primary" : ""}`} />
                     <span className="truncate">{step.label}</span>
                   </div>
                 );
               })}
             </div>
 
-            {/* Streaming Log Box */}
-            <div className="rounded-xl border border-white/[0.08] bg-black/80 p-3.5 font-mono text-[11px] text-zinc-300 space-y-1 max-h-36 overflow-y-auto">
+            {/* Terminal Streaming Logs */}
+            <div className="rounded-lg border border-border bg-muted/60 p-3 font-mono text-[11px] text-foreground space-y-1 max-h-32 overflow-y-auto">
               {stepLogs.map((log, idx) => (
                 <div key={idx} className="flex items-start gap-2">
-                  <span className="text-[#0a84ff] select-none">&gt;</span>
+                  <span className="text-primary font-bold select-none">&gt;</span>
                   <span className="break-words">{log}</span>
                 </div>
               ))}
@@ -370,17 +399,15 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
           </div>
         )}
 
-        {/* Correction Alert Banner */}
+        {/* Correction Warning Banner */}
         {correctionBanner.triggered && (
-          <div className="mb-8 rounded-2xl border border-[#ffd60a]/30 bg-[#ffd60a]/10 p-4 backdrop-blur-xl flex items-start gap-3">
-            <RefreshCw className="h-5 w-5 text-[#ffd60a] animate-spin mt-0.5 shrink-0" />
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 flex items-start gap-3 font-mono text-xs text-amber-700 dark:text-amber-300">
+            <RefreshCw className="h-4 w-4 text-amber-500 animate-spin mt-0.5 shrink-0" />
             <div>
-              <h4 className="text-xs font-semibold text-[#ffd60a]">
-                NLI Correction Loop Activated
-              </h4>
-              <p className="text-[11px] text-[#ffd60a]/80 mt-0.5 leading-relaxed">
+              <h4 className="font-bold">NLI Self-Correction Loop Triggered</h4>
+              <p className="text-[11px] text-muted-foreground mt-0.5 font-sans leading-relaxed">
                 {correctionBanner.reason ||
-                  "One or more extracted claims failed DeBERTa entailment verification. Re-retrieving candidate context and regenerating answer facts..."}
+                  "One or more extracted claims failed DeBERTa entailment verification. Triggering targeted re-retrieval and rewriting answer..."}
               </p>
             </div>
           </div>
@@ -388,42 +415,34 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
 
         {/* Error Alert */}
         {errorMsg && (
-          <div className="mb-8 rounded-2xl border border-[#ff453a]/30 bg-[#ff453a]/10 p-4 flex items-center justify-between text-xs text-[#ff453a]">
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-4 flex items-center justify-between text-xs text-destructive font-mono">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-[#ff453a]" />
+              <AlertTriangle className="h-4 w-4" />
               <span>{errorMsg}</span>
             </div>
-            <button onClick={() => setErrorMsg(null)} className="text-[#ff453a] hover:text-white">
+            <Button variant="ghost" size="xs" onClick={() => setErrorMsg(null)}>
               Dismiss
-            </button>
+            </Button>
           </div>
         )}
 
-        {/* Output Answer & Atomic Claims */}
+        {/* Final Output Synthesis Card */}
         {finalOutput && (
-          <div className="space-y-5">
-            {/* Verified Answer Card */}
-            <div className="rounded-3xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-8 backdrop-blur-2xl">
-              <div className="flex items-center justify-between border-b border-white/[0.06] pb-4 mb-5">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-1.5 rounded-lg bg-[#0a84ff]/10 text-[#0a84ff] border border-[#0a84ff]/20">
-                    <ShieldCheck className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-bold text-white">Verified Answer Synthesis</h3>
-                    <p className="text-[11px] font-mono text-zinc-400">
-                      {finalOutput.claims?.length || 0} Atomic Claims Verified
-                    </p>
-                  </div>
+          <div className="space-y-4">
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-border pb-3">
+                <div className="flex items-center gap-2 font-mono">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  <h3 className="text-sm font-bold text-foreground">Verified Synthesis</h3>
                 </div>
 
                 <span
-                  className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold border ${
+                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-mono border ${
                     finalOutput.overall_status === "fully_verified"
-                      ? "bg-[#30d158]/15 text-[#30d158] border-[#30d158]/30"
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                       : finalOutput.overall_status === "partially_verified"
-                      ? "bg-[#ffd60a]/15 text-[#ffd60a] border-[#ffd60a]/30"
-                      : "bg-[#ff453a]/15 text-[#ff453a] border-[#ff453a]/30"
+                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30"
+                      : "bg-destructive/10 text-destructive border-destructive/30"
                   }`}
                 >
                   {finalOutput.overall_status === "fully_verified" ? (
@@ -435,21 +454,21 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
                 </span>
               </div>
 
-              <div className="text-zinc-200 text-sm leading-relaxed bg-black/40 p-4 rounded-2xl border border-white/[0.06]">
+              <div className="text-foreground text-sm leading-relaxed font-sans bg-muted/40 p-4 rounded-lg border border-border">
                 {finalOutput.answer}
               </div>
             </div>
 
-            {/* Atomic Claims Inspection */}
-            <div className="rounded-3xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-8 backdrop-blur-2xl">
-              <div className="flex items-center justify-between mb-5">
-                <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                  <FileCheck className="h-4 w-4 text-[#0a84ff]" /> Atomic Claim DeBERTa NLI Breakdown
+            {/* Atomic Claim Inspection */}
+            <div className="rounded-xl border border-border bg-card p-6 shadow-sm space-y-3 font-mono">
+              <div className="flex items-center justify-between border-b border-border pb-2.5">
+                <h4 className="text-xs font-bold text-foreground flex items-center gap-2 uppercase tracking-wider">
+                  <FileCheck className="h-4 w-4 text-primary" /> Atomic Claim Breakdown & NLI Scores
                 </h4>
-                <span className="text-[11px] text-zinc-500">Click chunk tag to view source passage</span>
+                <span className="text-[11px] text-muted-foreground font-sans">Click chunk tag to view passage</span>
               </div>
 
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {finalOutput.claims && finalOutput.claims.length > 0 ? (
                   finalOutput.claims.map((c, i) => {
                     const isVerified = c.status === "VERIFIED" || c.status === "ENTAILMENT";
@@ -458,26 +477,24 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
                     return (
                       <div
                         key={i}
-                        className={`rounded-2xl border p-4 transition-all ${
+                        className={`rounded-lg border p-3.5 space-y-2 ${
                           isVerified
-                            ? "border-[#30d158]/30 bg-[#30d158]/[0.02]"
+                            ? "border-emerald-500/30 bg-emerald-500/5"
                             : isContradiction
-                            ? "border-[#ff453a]/30 bg-[#ff453a]/[0.02]"
-                            : "border-[#ffd60a]/30 bg-[#ffd60a]/[0.02]"
+                            ? "border-destructive/30 bg-destructive/5"
+                            : "border-amber-500/30 bg-amber-500/5"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center justify-between gap-2">
                           <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono font-bold text-zinc-400">
-                              Claim #{i + 1}
-                            </span>
+                            <span className="text-xs font-bold text-muted-foreground">Claim #{i + 1}</span>
                             <span
-                              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold border ${
+                              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold border ${
                                 isVerified
-                                  ? "bg-[#30d158]/20 text-[#30d158] border-[#30d158]/30"
+                                  ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/30"
                                   : isContradiction
-                                  ? "bg-[#ff453a]/20 text-[#ff453a] border-[#ff453a]/30"
-                                  : "bg-[#ffd60a]/20 text-[#ffd60a] border-[#ffd60a]/30"
+                                  ? "bg-destructive/20 text-destructive border-destructive/30"
+                                  : "bg-amber-500/20 text-amber-600 dark:text-amber-400 border-amber-500/30"
                               }`}
                             >
                               {isVerified ? (
@@ -491,77 +508,72 @@ export function QueryConsole({ selectedDocumentId }: QueryConsoleProps) {
                             </span>
 
                             {c.confidence_score !== undefined && (
-                              <span className="text-[10px] font-mono text-[#0a84ff] bg-[#0a84ff]/10 px-2 py-0.5 rounded-full border border-[#0a84ff]/20">
-                                Confidence: {(c.confidence_score * 100).toFixed(0)}%
+                              <span className="text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded border border-primary/20 font-bold">
+                                Entailment: {(c.confidence_score * 100).toFixed(0)}%
                               </span>
                             )}
                           </div>
 
                           {c.chunk_id && (
-                            <button
+                            <Button
+                              variant="outline"
+                              size="xs"
                               onClick={() => setActiveChunkModal(c)}
-                              className="inline-flex items-center gap-1 text-[11px] font-mono text-[#0a84ff] hover:text-white bg-[#0a84ff]/10 px-2.5 py-0.5 rounded-full border border-[#0a84ff]/20 transition-colors"
+                              className="text-[11px] font-mono border-border text-primary"
                             >
-                              <FileText className="h-3 w-3" />
-                              <span>Chunk: {c.chunk_id}</span>
-                              <ExternalLink className="h-2.5 w-2.5 ml-0.5" />
-                            </button>
+                              <FileText className="mr-1 h-3 w-3" />
+                              Chunk: {c.chunk_id}
+                              <ExternalLink className="ml-1 h-2.5 w-2.5" />
+                            </Button>
                           )}
                         </div>
 
-                        <p className="text-xs text-zinc-200 font-mono bg-black/50 p-3 rounded-xl border border-white/[0.06]">
+                        <p className="text-xs text-foreground bg-background p-2.5 rounded border border-border">
                           &quot;{c.claim_text}&quot;
                         </p>
                       </div>
                     );
                   })
                 ) : (
-                  <p className="text-xs text-zinc-500 italic">No claim objects returned.</p>
+                  <p className="text-xs text-muted-foreground italic font-sans">No discrete claims extracted.</p>
                 )}
               </div>
             </div>
           </div>
         )}
 
-        {/* Source Passage Modal */}
+        {/* Source Chunk Inspection Modal */}
         {activeChunkModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
-            <div className="relative w-full max-w-2xl rounded-3xl border border-white/15 bg-[#0c0c0e] p-6 shadow-2xl space-y-4">
-              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 font-mono">
+            <div className="relative w-full max-w-xl rounded-xl border border-border bg-card p-6 shadow-xl space-y-4">
+              <div className="flex items-center justify-between border-b border-border pb-3">
                 <div className="flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-[#0a84ff]" />
-                  <h3 className="text-xs font-bold text-white font-mono">
-                    Ground-Truth Source Passage [{activeChunkModal.chunk_id}]
+                  <FileText className="h-4 w-4 text-primary" />
+                  <h3 className="text-xs font-bold text-foreground">
+                    Source Passage Chunk [{activeChunkModal.chunk_id}]
                   </h3>
                 </div>
-                <button
-                  onClick={() => setActiveChunkModal(null)}
-                  className="p-1 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <Button variant="ghost" size="icon-xs" onClick={() => setActiveChunkModal(null)}>
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </Button>
               </div>
 
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
-                  Associated Claim:
-                </span>
-                <p className="text-xs font-mono text-[#0a84ff] bg-[#0a84ff]/10 p-3 rounded-xl border border-[#0a84ff]/20">
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase">Target Claim:</span>
+                <p className="text-xs text-primary bg-primary/10 p-2.5 rounded border border-primary/20">
                   {activeChunkModal.claim_text}
                 </p>
               </div>
 
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">
-                  Source Passage Text:
-                </span>
-                <div className="text-xs font-mono text-zinc-300 bg-black/60 p-4 rounded-xl border border-white/[0.08] max-h-56 overflow-y-auto leading-relaxed">
-                  {activeChunkModal.source_text || "Source text passage details available in backend store."}
+              <div className="space-y-1">
+                <span className="text-[10px] font-bold text-muted-foreground uppercase">Ground-Truth Passage:</span>
+                <div className="text-xs text-foreground bg-muted/60 p-3 rounded-lg border border-border max-h-48 overflow-y-auto leading-relaxed">
+                  {activeChunkModal.source_text || "Source passage text content registered in database index."}
                 </div>
               </div>
 
               <div className="flex justify-end pt-2">
-                <Button size="sm" variant="outline" className="rounded-full text-xs" onClick={() => setActiveChunkModal(null)}>
+                <Button variant="outline" size="sm" onClick={() => setActiveChunkModal(null)}>
                   Close
                 </Button>
               </div>

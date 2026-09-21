@@ -1,105 +1,97 @@
 "use client";
 
-import { Database, Split, ShieldCheck, RefreshCw, GitMerge } from "lucide-react";
+import { Database, Split, ShieldCheck, RefreshCw, GitMerge, Cpu, Layers } from "lucide-react";
 
 const FEATURES = [
   {
     icon: Database,
     title: "Hybrid Search & Reranking",
     description:
-      "Dense vector search combined with sparse BM25 keyword matching, reranked by Cross-Encoder models.",
+      "Dense FAISS vector search combined with sparse BM25 keyword matching, reranked by Cross-Encoder for high recall.",
     tag: "Retrieval",
-    iconColor: "text-[#0a84ff]",
-    borderColor: "border-[#0a84ff]/30",
   },
   {
     icon: Split,
-    title: "Atomic Claim Extraction",
+    title: "Atomic Claim Decomposition",
     description:
-      "Extracts standalone factual claims from draft generated answers and maps them to candidate source passage chunks.",
-    tag: "Extraction",
-    iconColor: "text-[#bf5af2]",
-    borderColor: "border-[#bf5af2]/30",
+      "Decomposes LLM generated candidate answers into discrete atomic claims and maps each claim to source passage chunks.",
+    tag: "Claim Processing",
   },
   {
     icon: ShieldCheck,
     title: "DeBERTa NLI Verification",
     description:
-      "Evaluates premise-hypothesis pairs using local NLI models to classify entailment, contradiction, and neutral claims.",
-    tag: "Verification",
-    iconColor: "text-[#30d158]",
-    borderColor: "border-[#30d158]/30",
+      "Scores premise-hypothesis pairs using local NLI cross-encoders to classify entailment, contradiction, and neutral claims.",
+    tag: "NLI Engine",
   },
   {
     icon: RefreshCw,
-    title: "LangGraph State Correction",
+    title: "LangGraph Correction Loop",
     description:
-      "State-machine router triggers targeted claim queries and partial answer regeneration to fix unverified statements.",
+      "State router triggers targeted claim queries and partial regeneration to eliminate hallucinated facts before output.",
     tag: "Self-Correction",
-    iconColor: "text-[#ffd60a]",
-    borderColor: "border-[#ffd60a]/30",
   },
 ];
 
 const TECHNICAL_STEPS = [
   {
     step: "01",
-    title: "Document Ingestion",
-    desc: "PDF files chunked with structural overlap and stored in FAISS + BM25 indices.",
+    title: "PDF Ingestion",
+    desc: "Documents parsed with PyMuPDF, chunked with structural overlap, and indexed into FAISS.",
   },
   {
     step: "02",
     title: "Citation Extraction",
-    desc: "LLM synthesizes response structured into discrete claims tied to chunk IDs.",
+    desc: "LLM synthesizes response structured into discrete claims tagged with source chunk IDs.",
   },
   {
     step: "03",
-    title: "NLI Cross-Encoder Scoring",
-    desc: "DeBERTa scores premise-hypothesis pairs for exact factual entailment.",
+    title: "NLI Pair Scoring",
+    desc: "DeBERTa evaluates premise-hypothesis pairs for exact factual entailment.",
   },
   {
     step: "04",
-    title: "Self-Correction Loop",
-    desc: "Unverified claims are re-queried, rewritten, and streamed in real-time.",
+    title: "State Correction Loop",
+    desc: "Failed claims trigger targeted re-retrieval and real-time SSE stream output.",
   },
 ];
 
 export function FeaturesSection() {
   return (
-    <section id="features" className="py-20 border-t border-white/[0.08] relative">
+    <section id="features" className="py-16 border-b border-border">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         {/* Header */}
         <div className="text-center max-w-2xl mx-auto">
-          <span className="text-[11px] font-mono uppercase tracking-widest text-[#0a84ff]">
-            Architecture Subsystems
+          <span className="text-[11px] font-mono uppercase tracking-widest text-primary font-bold">
+            Subsystem Architecture
           </span>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl font-sans">
-            Engineered for Precision & Grounding
+          <h2 className="mt-2 text-3xl font-bold tracking-tight text-foreground font-mono">
+            Engineered for Verifiable Accuracy
           </h2>
-          <p className="mt-3 text-sm text-zinc-400">
-            Four core components operating synchronously inside a compiled LangGraph state machine.
+          <p className="mt-3 text-sm text-muted-foreground font-sans">
+            Four core subsystems operating synchronously inside a compiled LangGraph state machine.
           </p>
         </div>
 
-        {/* 4 Feature Cards */}
-        <div className="mt-12 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* 4 Technical Cards */}
+        <div className="mt-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {FEATURES.map((feat) => {
             const Icon = feat.icon;
             return (
               <div
                 key={feat.title}
-                className="group relative rounded-2xl border border-white/[0.08] bg-white/[0.02] p-5 backdrop-blur-2xl transition-all duration-300 hover:border-white/20 hover:bg-white/[0.04]"
+                className="group relative rounded-xl border border-border bg-card p-5 transition-all hover:border-primary/50 shadow-sm"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.05] border border-white/10 mb-4">
-                  <Icon className={`h-5 w-5 ${feat.iconColor}`} />
+                <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-primary mb-3 border border-border">
+                  <Icon className="h-4.5 w-4.5" />
                 </div>
-                <span className="text-[10px] font-mono text-zinc-500 uppercase tracking-wider">
+                <span className="text-[10px] font-mono text-muted-foreground uppercase tracking-wider">
                   {feat.tag}
                 </span>
-                <h3 className="mt-1 text-base font-semibold text-white group-hover:text-[#0a84ff] transition-colors">
+                <h3 className="mt-1 text-sm font-bold text-foreground font-mono group-hover:text-primary transition-colors">
                   {feat.title}
                 </h3>
-                <p className="mt-2 text-xs text-zinc-400 leading-relaxed">
+                <p className="mt-2 text-xs text-muted-foreground leading-relaxed font-sans">
                   {feat.description}
                 </p>
               </div>
@@ -107,17 +99,17 @@ export function FeaturesSection() {
           })}
         </div>
 
-        {/* Execution Sequence Bar */}
-        <div className="mt-12 rounded-3xl border border-white/[0.08] bg-white/[0.02] p-6 sm:p-8 backdrop-blur-2xl">
-          <h3 className="text-xs font-semibold text-white uppercase tracking-wider flex items-center gap-2 mb-6">
-            <GitMerge className="h-4 w-4 text-[#bf5af2]" /> State Machine Execution Flow
+        {/* Sequence Flow Bar */}
+        <div className="mt-10 rounded-xl border border-border bg-card p-6 shadow-sm">
+          <h3 className="text-xs font-mono font-bold text-foreground uppercase tracking-wider flex items-center gap-2 mb-4">
+            <GitMerge className="h-4 w-4 text-primary" /> State Machine Execution Flow
           </h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {TECHNICAL_STEPS.map((s) => (
-              <div key={s.step} className="relative pl-4 border-l border-[#0a84ff]/40">
-                <span className="text-[11px] font-mono font-bold text-[#0a84ff]">{s.step}</span>
-                <h4 className="text-xs font-semibold text-white mt-1">{s.title}</h4>
-                <p className="text-[11px] text-zinc-400 mt-1 leading-normal">{s.desc}</p>
+              <div key={s.step} className="relative pl-3 border-l-2 border-primary">
+                <span className="text-[11px] font-mono font-bold text-primary">{s.step}</span>
+                <h4 className="text-xs font-bold text-foreground font-mono mt-0.5">{s.title}</h4>
+                <p className="text-[11px] text-muted-foreground font-sans mt-1 leading-normal">{s.desc}</p>
               </div>
             ))}
           </div>

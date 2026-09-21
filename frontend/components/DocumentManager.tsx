@@ -49,10 +49,10 @@ export function DocumentManager({ selectedDocumentId, onSelectDocument }: Docume
         const list = Array.isArray(data) ? data : data.documents || [];
         setDocuments(list);
       } else {
-        setError("Failed to load documents from backend");
+        setError("Failed to fetch documents from server");
       }
     } catch (err: any) {
-      setError(err?.message || "Backend connection error");
+      setError(err?.message || "Could not connect to backend server");
     } finally {
       setLoadingDocs(false);
     }
@@ -108,7 +108,7 @@ export function DocumentManager({ selectedDocumentId, onSelectDocument }: Docume
 
   const handleDelete = async (docId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!confirm("Remove document from knowledge index?")) return;
+    if (!confirm("Delete document from knowledge index?")) return;
 
     try {
       const res = await fetch(`${API_URL}/api/v1/documents/${docId}`, {
@@ -128,14 +128,14 @@ export function DocumentManager({ selectedDocumentId, onSelectDocument }: Docume
   };
 
   return (
-    <section id="documents" className="py-16 border-t border-white/[0.08]">
+    <section id="documents" className="py-14 border-b border-border">
       <div className="mx-auto max-w-5xl px-4 sm:px-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
           <div>
-            <h2 className="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-              <FileText className="h-5 w-5 text-[#0a84ff]" /> Knowledge Base Documents
+            <h2 className="text-xl font-bold tracking-tight text-foreground font-mono flex items-center gap-2">
+              <FileText className="h-5 w-5 text-primary" /> Knowledge Base Index
             </h2>
-            <p className="text-xs text-zinc-400 mt-0.5">
+            <p className="text-xs text-muted-foreground mt-0.5 font-sans">
               Upload PDF documents to parse, chunk, and index into FAISS + BM25 vector memory.
             </p>
           </div>
@@ -146,16 +146,17 @@ export function DocumentManager({ selectedDocumentId, onSelectDocument }: Docume
               size="sm"
               onClick={fetchDocuments}
               disabled={loadingDocs}
-              className="border-white/10 bg-white/[0.04] text-xs text-zinc-300 hover:bg-white/[0.08] hover:text-white rounded-full px-3.5"
+              className="text-xs font-mono border-border"
             >
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loadingDocs ? "animate-spin text-[#0a84ff]" : ""}`} />
-              Sync Index
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${loadingDocs ? "animate-spin text-primary" : ""}`} />
+              Refresh
             </Button>
             <Button
+              variant="default"
               size="sm"
               onClick={() => fileInputRef.current?.click()}
               disabled={uploading}
-              className="bg-[#0071e3] hover:bg-[#0077ed] text-white font-medium text-xs rounded-full px-4 shadow-sm"
+              className="text-xs font-mono"
             >
               <UploadCloud className="mr-1.5 h-3.5 w-3.5" />
               Upload PDF
@@ -173,76 +174,71 @@ export function DocumentManager({ selectedDocumentId, onSelectDocument }: Docume
           </div>
         </div>
 
-        {/* Upload Status Banner */}
+        {/* Upload Banner */}
         {uploading && (
-          <div className="mb-6 rounded-2xl border border-[#0a84ff]/30 bg-[#0a84ff]/10 p-4 flex items-center justify-between text-xs text-[#0a84ff]">
-            <div className="flex items-center gap-3">
-              <Loader2 className="h-4 w-4 animate-spin text-[#0a84ff]" />
+          <div className="mb-4 rounded-lg border border-primary/40 bg-primary/10 p-3 flex items-center justify-between text-xs text-foreground font-mono">
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
               <span>{uploadProgress || "Uploading and processing..."}</span>
             </div>
-            <span className="font-mono text-[11px] text-[#0a84ff]/80">Processing</span>
+            <span>Indexing</span>
           </div>
         )}
 
         {/* Error Alert */}
         {error && (
-          <div className="mb-6 rounded-2xl border border-[#ff453a]/30 bg-[#ff453a]/10 p-4 flex items-center justify-between text-xs text-[#ff453a]">
+          <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3 flex items-center justify-between text-xs text-destructive font-mono">
             <div className="flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-[#ff453a]" />
+              <AlertCircle className="h-4 w-4" />
               <span>{error}</span>
             </div>
-            <button onClick={() => setError(null)} className="text-[#ff453a] hover:text-white">
+            <Button variant="ghost" size="xs" onClick={() => setError(null)}>
               Dismiss
-            </button>
+            </Button>
           </div>
         )}
 
-        {/* Dropzone & Document List */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Upload Dropzone Box */}
+        {/* Dropzone & Document Cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div
             onClick={() => fileInputRef.current?.click()}
-            className="group relative flex flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-white/[0.02] p-6 text-center cursor-pointer transition-all hover:border-[#0a84ff]/50 hover:bg-white/[0.04]"
+            className="group relative flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card p-6 text-center cursor-pointer transition-all hover:border-primary hover:bg-muted/40 shadow-sm"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.05] border border-white/10 mb-3 group-hover:scale-105 transition-transform">
-              <UploadCloud className="h-5 w-5 text-[#0a84ff]" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted text-primary mb-2 group-hover:scale-105 transition-transform border border-border">
+              <UploadCloud className="h-4.5 w-4.5" />
             </div>
-            <p className="text-xs font-semibold text-white">Click or drag & drop PDF</p>
-            <p className="text-[11px] text-zinc-500 mt-1">Up to 20MB document size</p>
-            <span className="mt-3 rounded-full bg-white/[0.04] px-2.5 py-0.5 text-[10px] font-mono text-zinc-400 border border-white/[0.08]">
-              FAISS Vector Indexing
+            <p className="text-xs font-bold text-foreground font-mono">Click or Drag PDF</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5 font-sans">PDF & Text up to 20MB</p>
+            <span className="mt-3 rounded bg-muted px-2 py-0.5 text-[10px] font-mono text-muted-foreground border border-border">
+              FAISS Indexing
             </span>
           </div>
 
-          {/* Document Cards */}
           <div className="lg:col-span-2 space-y-2">
-            <div className="flex items-center justify-between text-xs text-zinc-400 px-1">
-              <span>Indexed Documents ({documents.length})</span>
+            <div className="flex items-center justify-between text-xs text-muted-foreground font-mono px-1">
+              <span>Documents ({documents.length})</span>
               <button
                 onClick={() => onSelectDocument(undefined)}
                 className={`text-[11px] font-mono transition-colors ${
-                  !selectedDocumentId ? "text-[#0a84ff] font-semibold" : "text-zinc-500 hover:text-white"
+                  !selectedDocumentId ? "text-primary font-bold" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
-                {!selectedDocumentId ? "✓ Target: All Documents" : "Target: All Documents"}
+                {!selectedDocumentId ? "✓ Scoped to All Documents" : "Target: All Documents"}
               </button>
             </div>
 
             {loadingDocs ? (
-              <div className="flex items-center justify-center p-8 rounded-2xl border border-white/[0.08] bg-white/[0.02]">
-                <Loader2 className="h-5 w-5 animate-spin text-[#0a84ff]" />
-                <span className="ml-2 text-xs text-zinc-400">Loading document index...</span>
+              <div className="flex items-center justify-center p-6 rounded-xl border border-border bg-card">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <span className="ml-2 text-xs text-muted-foreground font-mono">Loading document index...</span>
               </div>
             ) : documents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-8 rounded-2xl border border-white/[0.08] bg-white/[0.02] text-center">
-                <Layers className="h-7 w-7 text-zinc-600 mb-2" />
-                <p className="text-xs font-medium text-zinc-400">No documents indexed yet.</p>
-                <p className="text-[11px] text-zinc-500 mt-0.5">
-                  Upload a document above to test hallucination detection on your custom files.
-                </p>
+              <div className="flex flex-col items-center justify-center p-6 rounded-xl border border-border bg-card text-center">
+                <Layers className="h-6 w-6 text-muted-foreground mb-2" />
+                <p className="text-xs font-semibold text-muted-foreground font-mono">No documents indexed yet.</p>
               </div>
             ) : (
-              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+              <div className="space-y-2 max-h-[260px] overflow-y-auto pr-1">
                 {documents.map((doc) => {
                   const isSelected = selectedDocumentId === doc.document_id;
                   const isProcessed = doc.status === "PROCESSED";
@@ -250,42 +246,40 @@ export function DocumentManager({ selectedDocumentId, onSelectDocument }: Docume
                     <div
                       key={doc.document_id}
                       onClick={() => onSelectDocument(doc.document_id)}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border transition-all cursor-pointer ${
+                      className={`flex items-center justify-between p-3 rounded-lg border transition-all cursor-pointer ${
                         isSelected
-                          ? "border-[#0a84ff]/60 bg-[#0a84ff]/10"
-                          : "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
+                          ? "border-primary bg-primary/10 shadow-sm"
+                          : "border-border bg-card hover:border-primary/50"
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className={`p-2 rounded-lg ${isSelected ? "bg-[#0a84ff]/20 text-[#0a84ff]" : "bg-white/[0.05] text-zinc-400"}`}>
+                        <div className={`p-1.5 rounded ${isSelected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
                           <FileText className="h-4 w-4" />
                         </div>
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <h4 className="text-xs font-semibold text-white truncate">{doc.filename}</h4>
+                            <h4 className="text-xs font-bold text-foreground font-mono truncate">{doc.filename}</h4>
                             {isSelected && (
-                              <span className="rounded-full bg-[#0a84ff]/20 px-2 py-0.5 text-[9px] font-mono text-[#0a84ff] border border-[#0a84ff]/30">
+                              <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[9px] font-mono text-primary border border-primary/30">
                                 Target
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 text-[10px] text-zinc-500 font-mono mt-0.5">
+                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground font-mono mt-0.5">
                             <span>ID: {doc.document_id.slice(0, 8)}...</span>
-                            {doc.total_chunks !== undefined && (
-                              <span>• {doc.total_chunks} chunks</span>
-                            )}
+                            {doc.total_chunks !== undefined && <span>• {doc.total_chunks} chunks</span>}
                           </div>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2">
                         <span
-                          className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9px] font-medium border ${
+                          className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-mono border ${
                             isProcessed
-                              ? "bg-[#30d158]/10 text-[#30d158] border-[#30d158]/20"
+                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
                               : doc.status === "PROCESSING"
-                              ? "bg-[#ffd60a]/10 text-[#ffd60a] border-[#ffd60a]/20"
-                              : "bg-[#ff453a]/10 text-[#ff453a] border-[#ff453a]/20"
+                              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                              : "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
                           }`}
                         >
                           {isProcessed ? (
@@ -298,13 +292,14 @@ export function DocumentManager({ selectedDocumentId, onSelectDocument }: Docume
                           {doc.status}
                         </span>
 
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
                           onClick={(e) => handleDelete(doc.document_id, e)}
-                          className="text-zinc-500 hover:text-[#ff453a] p-1 rounded transition-colors"
                           title="Delete Document"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                        </Button>
                       </div>
                     </div>
                   );
