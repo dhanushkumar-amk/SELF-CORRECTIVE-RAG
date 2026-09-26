@@ -21,9 +21,9 @@ from typing import Any
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.models.api_models import DocumentMetadata
 from app.models.schemas import (
     Chunk,
-    DocumentMetadata,
     DocumentStatus,
     PageText,
     validate_transition,

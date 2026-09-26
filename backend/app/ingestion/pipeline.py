@@ -45,11 +45,13 @@ from app.ingestion.exceptions import (
 from app.ingestion.pdf_extractor import PDFExtractionError, extract_raw_pages
 from app.ingestion.storage import DocumentRegistry, get_document_registry
 from app.ingestion.text_cleaner import clean_document_pages
+from app.models.api_models import (
+    DocumentVerificationResponse,
+    IngestionResult,
+)
 from app.models.schemas import (
     Chunk,
     DocumentStatus,
-    DocumentVerificationResponse,
-    IngestionResult,
 )
 from app.retrieval.pinecone_client import (
     PineconeBatchUpsertError,

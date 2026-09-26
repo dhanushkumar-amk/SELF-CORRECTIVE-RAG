@@ -98,6 +98,13 @@ class Settings(BaseSettings):
     # ── Correction Loop (Phase 40–41) ─────────────────────────────────────
     CORRECTION_MAX_RETRIES: int = 2
 
+    # ── Rate Limiting (Phase 45) ───────────────────────────────────────────
+    # Each /api/v1/query call can trigger multiple billed LLM invocations
+    # (generation + up to CORRECTION_MAX_RETRIES corrective re-generations),
+    # so a per-minute cap protects Groq/Gemini free-tier quotas from abuse.
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_QUERY_PER_MINUTE: int = 10
+
     # ── Observability: LangChain / LangSmith (Optional — Debugging) ───────
     # Observability platform for LangGraph traces: https://smith.langchain.com/
     LANGCHAIN_API_KEY: str = ""

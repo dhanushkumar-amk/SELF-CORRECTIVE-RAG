@@ -64,9 +64,12 @@ def regenerate_node(state: RAGState) -> dict[str, Any]:
         logger.warning("Partial re-generation yielded 0 replacement claims.")
         return {}
 
-    # 2. Map corrected claims to enriched context chunks
+    # 2. Map corrected claims to enriched context chunks and tag them as
+    #    correction-loop outputs (frontend "corrected after review" indicator).
     temp_answer = GeneratedAnswer(claims=corrected_raw_claims)
     corrected_mapped_claims = map_claims_to_chunks(temp_answer, chunks)
+    for claim in corrected_mapped_claims:
+        claim.was_corrected = True
 
     # 3. Positional merge with untouched verified claims
     merged_claims = merge_corrected_claims(

@@ -23,17 +23,19 @@ from app.ingestion.pdf_extractor import (
 from app.ingestion.pipeline import run_ingestion_pipeline, verify_document_upsert
 from app.ingestion.storage import get_document_registry, sanitize_filename
 from app.ingestion.text_cleaner import clean_document_pages
-from app.models.schemas import (
-    Chunk,
+from app.models.api_models import (
     ChunkListResponse,
     DocumentExtractionResponse,
     DocumentListResponse,
     DocumentMetadata,
-    DocumentStatus,
     DocumentStatusResponse,
     DocumentUploadResponse,
     DocumentVerificationResponse,
     IngestionResult,
+)
+from app.models.schemas import (
+    Chunk,
+    DocumentStatus,
     PageText,
     calculate_progress_percent,
 )
@@ -139,24 +141,33 @@ async def upload_document(
 
 
 @router.get(
-    "/documents",
+    "",
     response_model=DocumentListResponse,
     summary="List all registered documents",
 )
+@router.get(
+    "/documents",
+    response_model=DocumentListResponse,
+    include_in_schema=False,
+)
 async def list_documents() -> DocumentListResponse:
-    """Retrieve all uploaded documents recorded in the document registry."""
+    """Retrieve all uploaded documents recorded in the document registry.
+
+    Canonical URL: GET /api/v1/documents (the ``/documents`` sub-path alias is
+    kept hidden for backward compatibility with early-phase clients).
+    """
     registry = get_document_registry()
     docs = registry.list_documents()
     return DocumentListResponse(documents=docs, total=len(docs))
 
 
 @router.get(
-    "/documents/{document_id}",
+    "/{document_id}",
     response_model=DocumentMetadata,
     summary="Get document details by ID",
 )
 @router.get(
-    "/{document_id}",
+    "/documents/{document_id}",
     response_model=DocumentMetadata,
     include_in_schema=False,
 )

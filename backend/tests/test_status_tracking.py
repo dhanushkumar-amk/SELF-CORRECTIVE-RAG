@@ -21,8 +21,8 @@ from fastapi.testclient import TestClient
 from app.ingestion.pipeline import run_ingestion_pipeline
 from app.ingestion.storage import DocumentRegistry, check_registry_consistency
 from app.main import app
+from app.models.api_models import DocumentMetadata
 from app.models.schemas import (
-    DocumentMetadata,
     DocumentStatus,
     PageText,
     calculate_progress_percent,

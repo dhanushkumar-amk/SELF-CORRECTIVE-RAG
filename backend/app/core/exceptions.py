@@ -4,24 +4,49 @@ Centralized Exception Handlers for Phase 45: API Error Standardization.
 Architecture & Design Decisions:
 1. Standardized Error Contract (`ErrorResponse`):
    Guarantees that ALL exception pathways across the API (validation errors, HTTP exceptions,
-   LLM generation errors, PDF extraction errors, value errors, and unhandled 500s)
+   LLM generation errors, ingestion errors, rate limiting, and unhandled 500s)
    return a consistent `{ "error": str, "detail": str, "status_code": int }` JSON body.
 
-2. Logging & Tracing:
-   Logs exception details with severity levels appropriate for debugging without leaking internal stack traces to clients.
+2. Explicit Exception -> HTTP Status Mapping:
+   Every project-specific exception type maps to a deliberate status code rather than
+   defaulting to 500:
+
+   +----------------------------+---------+---------------------------+
+   | Exception                  | Status  | Error Code                |
+   +============================+=========+===========================+
+   | HTTPException              | passthru| HTTP_ERROR                |
+   | RequestValidationError     | 422     | VALIDATION_ERROR          |
+   | PDFExtractionError         | 400     | PDF_EXTRACTION_ERROR      |
+   | ValueError                 | 400     | BAD_REQUEST               |
+   | RateLimitExceeded          | 429     | RATE_LIMIT_EXCEEDED       |
+   | PermanentIngestionError    | 422     | INGESTION_PERMANENT_ERROR |
+   | TransientIngestionError    | 503     | INGESTION_TRANSIENT_ERROR |
+   | GenerationError            | 503     | GENERATION_ERROR          |
+   | Exception (unhandled)      | 500     | INTERNAL_SERVER_ERROR     |
+   +----------------------------+---------+---------------------------+
+
+   Document-not-found is surfaced as HTTPException(404) by the routes themselves.
+
+3. Logging & Tracing:
+   Logs exception details with severity levels appropriate for debugging WITHOUT leaking
+   internal stack traces or exception messages to API clients. The unhandled 500 path
+   returns a generic message by design.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from math import ceil
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.core.logging import get_logger
+from app.core.rate_limit import RateLimitExceeded
+from app.ingestion.exceptions import PermanentIngestionError, TransientIngestionError
 from app.ingestion.pdf_extractor import PDFExtractionError
-from app.models.schemas import ErrorResponse, GenerationError
+from app.models.api_models import ErrorResponse
+from app.models.schemas import GenerationError
 
 logger = get_logger(__name__)
 
@@ -69,10 +94,64 @@ def register_exception_handlers(app: FastAPI) -> None:
         )
         return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=payload.model_dump())
 
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+        retry_after = max(1, ceil(exc.retry_after))
+        logger.warning(
+            "RateLimitExceeded [429] on %s %s (client='%s', limit=%d/min).",
+            request.method,
+            request.url.path,
+            exc.client_key,
+            exc.limit,
+        )
+        payload = ErrorResponse(
+            error="RATE_LIMIT_EXCEEDED",
+            detail=(
+                f"Rate limit exceeded: maximum {exc.limit} queries per minute per client. "
+                f"Retry after {retry_after} seconds."
+            ),
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+        return JSONResponse(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            content=payload.model_dump(),
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    @app.exception_handler(PermanentIngestionError)
+    async def permanent_ingestion_error_handler(request: Request, exc: PermanentIngestionError) -> JSONResponse:
+        logger.error(
+            "PermanentIngestionError [422] on %s %s: %s",
+            request.method,
+            request.url.path,
+            exc,
+        )
+        payload = ErrorResponse(
+            error="INGESTION_PERMANENT_ERROR",
+            detail=str(exc),
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=payload.model_dump())
+
+    @app.exception_handler(TransientIngestionError)
+    async def transient_ingestion_error_handler(request: Request, exc: TransientIngestionError) -> JSONResponse:
+        logger.error(
+            "TransientIngestionError [503] on %s %s: %s",
+            request.method,
+            request.url.path,
+            exc,
+        )
+        payload = ErrorResponse(
+            error="INGESTION_TRANSIENT_ERROR",
+            detail=str(exc),
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload.model_dump())
+
     @app.exception_handler(GenerationError)
     async def generation_error_handler(request: Request, exc: GenerationError) -> JSONResponse:
         logger.error(
-            "GenerationError [502] on %s %s: %s",
+            "GenerationError [503] on %s %s: %s",
             request.method,
             request.url.path,
             exc.message,
@@ -80,9 +159,9 @@ def register_exception_handlers(app: FastAPI) -> None:
         payload = ErrorResponse(
             error="GENERATION_ERROR",
             detail=exc.message,
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         )
-        return JSONResponse(status_code=status.HTTP_502_BAD_GATEWAY, content=payload.model_dump())
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content=payload.model_dump())
 
     @app.exception_handler(PDFExtractionError)
     async def pdf_extraction_error_handler(request: Request, exc: PDFExtractionError) -> JSONResponse:

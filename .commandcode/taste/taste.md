@@ -1,0 +1,4 @@
+- Values production-grade quality: wants work complete, all errors resolved, and the final result production-ready. Confidence: 0.8
+- Communicates informally with frequent typos and shortcuts; expects intent to be inferred rather than spelling corrected or clarification requested. Confidence: 0.7
+- Provides detailed, checklist-style task specifications (numbered requirements plus TESTS, VERIFICATION STEPS, and OUTPUT sections) and expects them followed exactly, including explicit "stop here / do not proceed" boundaries. Confidence: 0.8
+- Expects each feature/phase to ship with dedicated tests, an explicit verification run, and a README roadmap update checking off completed phases. Confidence: 0.8

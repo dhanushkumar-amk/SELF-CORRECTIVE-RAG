@@ -47,11 +47,11 @@ def test_http_exception_handler_404():
     assert data["status_code"] == 404
 
 
-def test_generation_error_handler_502():
-    """Verify GenerationError returns structured 502 Bad Gateway ErrorResponse JSON."""
+def test_generation_error_handler_503():
+    """Verify GenerationError returns structured 503 Service Unavailable ErrorResponse JSON."""
     with patch("app.api.routes.query.app_graph.invoke", side_effect=GenerationError("LLM providers unavailable")):
         res = client.post("/api/v1/query", json={"query": "Test query", "stream": False})
-        assert res.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR or res.status_code == status.HTTP_502_BAD_GATEWAY
+        assert res.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
         data = res.json()
-        assert "error" in data
-        assert "status_code" in data
+        assert data["error"] == "GENERATION_ERROR"
+        assert data["status_code"] == 503

@@ -14,15 +14,16 @@ Architecture & Design Decisions:
 from __future__ import annotations
 
 import time
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from app.api.query_stream import stream_query_execution
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.rate_limit import rate_limit_query
 from app.graph.graph import app_graph
 from app.graph.state import RAGState
-from app.models.schemas import ErrorResponse, QueryRequest, QueryResponse
+from app.models.api_models import ErrorResponse, QueryRequest, QueryResponse
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -33,10 +34,14 @@ router = APIRouter()
     response_model=QueryResponse,
     responses={
         400: {"model": ErrorResponse, "description": "Invalid query input"},
-        500: {"model": ErrorResponse, "description": "Pipeline execution error"},
+        422: {"model": ErrorResponse, "description": "Request validation failed"},
+        429: {"model": ErrorResponse, "description": "Per-client rate limit exceeded"},
+        500: {"model": ErrorResponse, "description": "Unexpected pipeline execution error"},
+        503: {"model": ErrorResponse, "description": "LLM generation unavailable"},
     },
     status_code=status.HTTP_200_OK,
     summary="Execute a self-correcting RAG query (supports JSON & SSE streaming)",
+    dependencies=[Depends(rate_limit_query)],
 )
 async def query_rag(request: QueryRequest) -> QueryResponse | StreamingResponse:
     """Execute natural language query through the self-correcting RAG state machine.
@@ -89,22 +94,17 @@ async def query_rag(request: QueryRequest) -> QueryResponse | StreamingResponse:
         "max_retries": settings.CORRECTION_MAX_RETRIES,
     }
 
-    try:
-        final_state = app_graph.invoke(initial_state)
-        duration_ms = (time.perf_counter() - start_t) * 1000.0
+    # Exceptions propagate to the centralized handlers in app.core.exceptions:
+    # GenerationError -> 503, unexpected failures -> generic 500 (no leakage).
+    final_state = app_graph.invoke(initial_state)
+    duration_ms = (time.perf_counter() - start_t) * 1000.0
 
-        return QueryResponse(
-            query=request.query,
-            final_status=final_state.get("final_status", "unverifiable"),
-            final_answer_text=final_state.get("final_answer_text", ""),
-            claims=final_state.get("claims", []),
-            retry_count=final_state.get("retry_count", 0),
-            retrieved_chunks=final_state.get("retrieved_chunks", []),
-            latency_ms=round(duration_ms, 2),
-        )
-    except Exception as exc:
-        logger.error("RAG pipeline execution failed: %s", exc, exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"RAG pipeline execution failed: {exc}",
-        ) from exc
+    return QueryResponse(
+        query=request.query,
+        final_status=final_state.get("final_status", "unverifiable"),
+        final_answer_text=final_state.get("final_answer_text", ""),
+        claims=final_state.get("claims", []),
+        retry_count=final_state.get("retry_count", 0),
+        retrieved_chunks=final_state.get("retrieved_chunks", []),
+        latency_ms=round(duration_ms, 2),
+    )

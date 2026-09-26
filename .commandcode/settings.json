@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(.venv\\Scripts\\pip.exe list 2>nul | findstr /i \"slowapi fastapi starlette pydantic pytest\" & echo --- & .venv\\Scripts\\python.exe --version)",
+      "Shell(.venvScriptspython.exe:*)",
+      "Shell(.venv\\Scripts\\python.exe -c \"import torch; print('torch ok', torch.__version__)\" 2>&1 | tail -5; echo \"=== pytest cache lastfailed ===\"; type .pytest_cache\\v\\cache\\lastfailed 2>nul; echo \"=== nodefile ===\"; type .pytest_cache\\v\\cache\\nodeids 2>nul | more +1 | head -5)",
+      "powershell",
+      "Shell(powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique | ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue; Write-Output ('stopped PID ' + $_) }\")",
+      "Shell(powershell -NoProfile -Command \"Get-ChildItem 'C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\uploads' -ErrorAction SilentlyContinue | Select-Object Name,Mode; Write-Output '--- registry ---'; if (Test-Path 'C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\uploads\\registry.json') { Get-Content 'C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\uploads\\registry.json' -Raw | ConvertFrom-Json | ConvertTo-Json -Depth 3 -Compress | ForEach-Object { $_.Substring(0, [Math]::Min(1500, $_.Length)) } } else { Write-Output 'no registry.json' }; Write-Output '--- root uploads ---'; Get-ChildItem 'C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\uploads' -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Shell(powershell -NoProfile -Command \"$r = Get-Content 'C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\uploads\\registry.json' -Raw | ConvertFrom-Json; $r.PSObject.Properties | ForEach-Object { $v = $_.Value; '{0} | {1} | {2} | chunks={3} | upserted={4}' -f $_.Name.Substring(0,8), $v.filename, $v.status, $v.chunk_count, $v.upserted_count }\")",
+      "Shell(powershell -NoProfile -Command \"Get-ChildItem 'C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\docs','C:\\Users\\dhanu\\Documents\\PROJECTS\\SELF CORRECTIVE RAG\\backend\\tests\\fixtures' -Recurse -File | Select-Object FullName, Length\")",
+      "Shell(powershell -NoProfile -Command \"if (Test-Path \\\"$env:USERPROFILE\\.cache\\huggingface\\hub\\models--sentence-transformers\\\") { Get-ChildItem \\\"$env:USERPROFILE\\.cache\\huggingface\\hub\\models--sentence-transformers\\\" | Select-Object Name } else { 'no sentence-transformers cache' }; Write-Output '---'; Get-ChildItem \\\"$env:USERPROFILE\\.cache\\huggingface\\hub\\\" -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Shell(curl.exe:*)",
+      "Shell(curl.exe -s -N -X POST http://127.0.0.1:8000/api/v1/query -H \"Content-Type: application/json\" -H \"Accept: text/event-stream\" -d \"{\\\"query\\\":\\\"What is the SELF-RAG framework?\\\",\\\"document_id\\\":\\\"02ef7d1f-11c5-4f82-8583-7245467d84ae\\\",\\\"stream\\\":true,\\\"enable_correction\\\":true}\" --max-time 300 > ..\\scratch\\sse_demo1.txt; Get-Content ..\\scratch\\sse_demo1.txt | Select-String -Pattern \"^event:\" | ForEach-Object { $_.Line })",
+      "Shell(powershell -NoProfile -Command \"$j = Get-Content 'uploads\\a8400ab0-c49c-4ad0-8dbb-69e995c59803\\chunks.json' -Raw | ConvertFrom-Json; $j.chunks | ForEach-Object { 'chunk ' + $_.chunk_index + ' p' + $_.page_number + ': ' + $_.text }\")",
+      "Shell(powershell -NoProfile -Command \"$j = Get-Content 'uploads\\a8400ab0-c49c-4ad0-8dbb-69e995c59803\\chunks.json' -Raw | ConvertFrom-Json; $j | ConvertTo-Json -Depth 4 | Select-Object -First 1 | ForEach-Object { $_.Substring(0, 800) }; Write-Output '=== extracted.json ==='; if (Test-Path 'uploads\\a8400ab0-c49c-4ad0-8dbb-69e995c59803\\extracted.json') { (Get-Content 'uploads\\a8400ab0-c49c-4ad0-8dbb-69e995c59803\\extracted.json' -Raw).Substring(0, 800) } else { 'no extracted.json' }; Get-ChildItem 'uploads\\a8400ab0-c49c-4ad0-8dbb-69e995c59803' | Select-Object Name\")"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

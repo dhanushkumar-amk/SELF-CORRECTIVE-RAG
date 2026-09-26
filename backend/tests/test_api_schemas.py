@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.main import app
-from app.models.schemas import ErrorResponse, QueryRequest, QueryResponse
+from app.models.api_models import ErrorResponse, QueryRequest, QueryResponse
 
 
 def test_query_request_whitespace_trimming_and_validation():

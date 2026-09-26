@@ -1,20 +1,21 @@
 """
-Pydantic schemas for request/response models.
+Internal Domain Models — app/models/schemas.py.
 
-This file will be populated in later phases as endpoints are implemented.
+This module contains the *internal* data structures used by the ingestion,
+retrieval, generation, verification, and correction-loop pipeline stages.
+These models are implementation details and may evolve independently of the
+public API contract.
+
+The public request/response DTOs exposed over HTTP (``/api/v1/*``) live in
+``app/models/api_models.py`` and are the only schemas that external clients
+should depend on.
 """
 
 import uuid
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-
-
-class HealthResponse(BaseModel):
-    """Response schema for the health check endpoint."""
-
-    status: str
+from pydantic import BaseModel, Field, model_validator
 
 
 class DocumentStatus(str, Enum):
@@ -153,54 +154,12 @@ def calculate_progress_percent(
     return 0
 
 
-class DocumentUploadResponse(BaseModel):
-    """Response schema returned after a successful document upload."""
-
-    document_id: str = Field(description="Unique UUID4 identifier for the document")
-    filename: str = Field(description="Original sanitized filename")
-    status: DocumentStatus = Field(default=DocumentStatus.UPLOADED)
-    size_bytes: int = Field(description="File size in bytes")
-
-
-class DocumentMetadata(BaseModel):
-    """Metadata schema representing an uploaded document record in the registry."""
-
-    document_id: str
-    filename: str
-    upload_timestamp: str
-    size_bytes: int
-    status: DocumentStatus = DocumentStatus.UPLOADED
-    file_path: str | None = None
-    failure_reason: str | None = None
-    retryable: bool | None = None
-    page_count: int | None = None
-    total_char_count: int | None = None
-    chunk_count: int | None = None
-    upserted_count: int | None = None
-    current_stage: str | None = None
-    total_tokens: int | None = None
-    processing_time_seconds: float | None = None
-    stage_timings: dict[str, float] | None = None
-
-
 class PageText(BaseModel):
     """Extracted text and character metadata for a single PDF page."""
 
     page_number: int = Field(description="1-indexed page number within the PDF document")
     text: str = Field(description="Cleaned, structured extracted text from the page")
     char_count: int = Field(description="Total number of characters extracted on this page")
-
-
-class DocumentExtractionResponse(BaseModel):
-    """Response schema returned by the document extraction endpoint."""
-
-    document_id: str
-    status: DocumentStatus
-    failure_reason: str | None = None
-    page_count: int | None = None
-    total_char_count: int | None = None
-    pages: list[PageText] = Field(default_factory=list)
-    cleaning_reports: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class Chunk(BaseModel):
@@ -237,21 +196,6 @@ class Chunk(BaseModel):
             max_bytes=max_bytes,
             auto_truncate=auto_truncate,
         )
-
-
-class ChunkListResponse(BaseModel):
-    """Response schema returned by the document chunking endpoint."""
-
-    document_id: str
-    chunk_count: int
-    chunks: list[Chunk]
-
-
-class DocumentListResponse(BaseModel):
-    """Response schema for listing all registered documents."""
-
-    documents: list[DocumentMetadata]
-    total: int
 
 
 class ChunkMetadata(BaseModel):
@@ -346,55 +290,6 @@ class ChunkMetadata(BaseModel):
         )
 
 
-class IngestionResult(BaseModel):
-    """Result returned after running the complete document ingestion pipeline."""
-
-    document_id: str = Field(description="Unique UUID4 identifier for the document")
-    status: DocumentStatus = Field(description="Final lifecycle status of the document")
-    chunk_count: int = Field(default=0, description="Total number of chunks produced")
-    upserted_count: int = Field(default=0, description="Total vectors successfully upserted to Pinecone")
-    total_tokens: int = Field(default=0, description="Total number of tokens across all chunks")
-    processing_time_seconds: float = Field(default=0.0, description="Total pipeline execution time in seconds")
-    failure_reason: str | None = Field(default=None, description="Detailed failure reason if pipeline failed")
-    retryable: bool | None = Field(default=None, description="Whether the failure is eligible for retry")
-    current_stage: str | None = Field(default=None, description="Current or terminal pipeline stage")
-    stage_timings: dict[str, float] = Field(default_factory=dict, description="Execution duration in seconds per stage")
-
-
-class DocumentStatusResponse(BaseModel):
-    """Response schema for polling document ingestion status and stage progress."""
-
-    document_id: str = Field(description="Unique UUID4 identifier for the document")
-    filename: str = Field(default="", description="Original PDF filename")
-    status: DocumentStatus = Field(description="Current status (uploaded, processing, ready, failed)")
-    current_stage: str | None = Field(default=None, description="Current stage (extracting, cleaning, chunking, embedding, upserting, ready, failed)")
-    progress_percent: int = Field(default=0, description="Approximate processing percentage (0-100%) for UI progress display")
-    failure_reason: str | None = Field(default=None, description="Detailed failure message if status is failed")
-    retryable: bool | None = Field(default=None, description="Whether a failed document is eligible for retry")
-    chunk_count: int | None = Field(default=None, description="Total chunks if chunking completed")
-    upserted_count: int | None = Field(default=None, description="Total vectors upserted to Pinecone")
-    page_count: int | None = Field(default=None, description="Total extracted pages if extraction completed")
-    total_tokens: int | None = Field(default=None, description="Total token count if chunking completed")
-    total_char_count: int | None = Field(default=None, description="Total extracted character count")
-    uploaded_at: str = Field(default="", description="ISO-8601 upload timestamp")
-    processing_time_seconds: float | None = Field(default=None, description="Elapsed processing time")
-    stage_timings: dict[str, float] | None = Field(default=None, description="Breakdown of timing per stage")
-
-
-class DocumentVerificationResponse(BaseModel):
-    """Response schema for on-demand Pinecone vector verification."""
-
-    document_id: str = Field(description="Unique UUID4 identifier for the document")
-    status: DocumentStatus = Field(description="Current document status")
-    verified: bool = Field(description="Whether all sampled vectors matched on-disk chunk source text")
-    chunk_count: int = Field(default=0, description="Total chunks in local document storage")
-    sampled_count: int = Field(default=0, description="Number of chunks sampled and fetched from Pinecone")
-    matched_count: int = Field(default=0, description="Number of sampled chunks whose source text matched exactly")
-    mismatches: list[str] = Field(default_factory=list, description="List of mismatch descriptions if any")
-    verified_chunks: list[dict[str, Any]] = Field(default_factory=list, description="Sampled chunk verification details")
-    message: str = Field(description="Human-readable verification result summary")
-
-
 class RetrievalResult(BaseModel):
     """Unified retrieval result container returned by dense, sparse, and fused hybrid search."""
 
@@ -478,6 +373,7 @@ class ClaimWithSource(BaseModel):
     filename: str | None = Field(default=None, description="Source PDF filename for citations")
     verification_status: VerificationStatus | None = Field(default=None, description="Populated in Phase 34-35 by NLI verification logic")
     confidence: float | None = Field(default=None, description="Populated in Phase 34-35 with NLI prediction confidence")
+    was_corrected: bool = Field(default=False, description="True if this claim was re-generated by the self-correction loop (Phase 46 UI indicator)")
 
 
 class NLIScore(BaseModel):
@@ -487,48 +383,3 @@ class NLIScore(BaseModel):
     entailment: float = Field(description="Probability/score for entailment label")
     neutral: float = Field(description="Probability/score for neutral label")
     predicted_label: VerificationStatus = Field(description="VerificationStatus enum label corresponding to highest NLI score")
-
-
-class ErrorResponse(BaseModel):
-    """Standardized API error response payload across all endpoints."""
-
-    error: str = Field(description="High-level error classification code")
-    detail: str = Field(description="Detailed human-readable error explanation")
-    status_code: int = Field(description="HTTP status code")
-
-
-class QueryRequest(BaseModel):
-    """Request payload for executing a RAG query through the self-correction graph."""
-
-    query: str = Field(min_length=1, description="Natural language user question")
-    document_id: str | None = Field(default=None, description="Optional document UUID for single-document retrieval scoping")
-    stream: bool = Field(default=True, description="True to stream state machine progress via Server-Sent Events (SSE), False for JSON response")
-
-    @field_validator("query", mode="before")
-    @classmethod
-    def _sanitize_query(cls, v: str) -> str:
-        if isinstance(v, str):
-            v = v.strip()
-        if not v:
-            raise ValueError("Query string cannot be empty or whitespace-only.")
-        return v
-
-
-class QueryResponse(BaseModel):
-    """Structured response payload returned by non-streaming query execution."""
-
-    query: str = Field(description="Original user query")
-    final_status: str = Field(description="Aggregate system verification status ('fully_verified', 'partially_verified', 'unverifiable')")
-    final_answer_text: str = Field(description="Synthesized final user-facing answer text")
-    claims: list[ClaimWithSource] = Field(default_factory=list, description="List of atomic claims with verification statuses and confidence scores")
-    retry_count: int = Field(default=0, description="Total self-correction retries executed")
-    retrieved_chunks: list[RetrievalResult] = Field(default_factory=list, description="Final context chunks used for answer generation")
-    latency_ms: float = Field(default=0.0, description="Total execution latency in milliseconds")
-
-
-
-
-
-
-
-

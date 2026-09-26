@@ -141,6 +141,8 @@ Services will be accessible at:
 | `LANGCHAIN_ENDPOINT` | No | `https://api.smith.langchain.com` | LangSmith API endpoint |
 | `UPLOAD_DIR` | No | `uploads` | Local directory for raw PDF uploads and document registry |
 | `MAX_UPLOAD_SIZE_MB` | No | `20` | Maximum allowed file upload size in megabytes |
+| `RATE_LIMIT_ENABLED` | No | `true` | When `true`, enforces the per-minute query rate limit on `/api/v1/query` |
+| `RATE_LIMIT_QUERY_PER_MINUTE` | No | `10` | Maximum queries per minute per client IP; exceeded requests get HTTP 429 + `Retry-After` |
 
 *\*At least one LLM API key (`GEMINI_API_KEY` or `GROQ_API_KEY`) is required in production when `REQUIRE_API_KEYS=true`.*
 
@@ -149,6 +151,15 @@ Services will be accessible at:
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `NEXT_PUBLIC_API_URL` | No | `http://localhost:8000` | Backend API base URL accessible from browser client |
+
+---
+
+## API Standards & Rate Limiting
+
+- **Versioned surface:** all endpoints live under `/api/v1/...`; a breaking change would introduce `/api/v2` alongside it.
+- **Uniform error contract:** every failure returns `{"error": <code>, "detail": <msg>, "status_code": <n>}` with an explicit mapping — validation `422`, ingestion permanent failure `422`, transient infrastructure failure `503`, generation failure `503`, rate limit `429`, unhandled errors `500` (internal details never leak to clients).
+- **Request tracing:** every response carries `X-Correlation-ID` (generated or propagated) and `X-Process-Time-Ms`; the same ID is written into structured logs for end-to-end tracing.
+- **Rate limiting:** `/api/v1/query` is capped at `RATE_LIMIT_QUERY_PER_MINUTE` (default 10) requests per minute per client IP via an in-process sliding window. Rationale: each query can trigger multiple billed LLM invocations (initial generation + up to 2 corrective re-generations), so the cap protects Groq/Gemini free-tier quotas. Exceeded requests receive `429` + `Retry-After`. For multi-replica deployments, swap the in-process store for a shared one (e.g. Redis via slowapi/limits).
 
 ---
 
@@ -296,7 +307,7 @@ self-correcting-rag/
 - [x] **Phase 44:** Request/response models (`QueryRequest` string sanitization, `QueryResponse`, `ErrorResponse` & OpenAPI validation)
 - [x] **Phase 45:** API error handling & logging (`register_exception_handlers()` global handlers, `CorrelationIdAndTimingMiddleware` tracing & timing)
 
-> 📡 **Backend API Layer (Phases 42–45) complete** — Frontend UI & Citation Display next (Phases 46–48)!
+> 📡 **Backend API Layer (Phases 42–45) complete** — consolidated public API models (`api_models.py`), explicit error→status mapping, request-ID tracing, and per-client rate limiting are in place. Frontend UI & Citation Display next (Phases 46–48)!
 
 ### Phase 44–46 — Frontend & Citation UI
 
