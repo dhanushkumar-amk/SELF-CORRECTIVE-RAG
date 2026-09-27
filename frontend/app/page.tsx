@@ -491,6 +491,16 @@ export default function Home() {
                 <Skeleton className="h-9 w-full" />
                 <Skeleton className="h-9 w-full" />
               </div>
+            ) : docError ? (
+              <div className="my-2 rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-center text-[12px] text-destructive">
+                <p className="mb-2 line-clamp-2">{docError}</p>
+                <button
+                  onClick={fetchDocs}
+                  className="rounded border border-destructive/40 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-accent"
+                >
+                  Retry
+                </button>
+              </div>
             ) : documents.length === 0 ? (
               <div className="py-6 text-center text-[12px] text-muted-foreground">
                 <Layers className="mx-auto mb-1.5 h-5 w-5 opacity-40" />

@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://[::1]:3000",
     ]
 
     # ── Document Storage & Ingestion (Phase 6+) ───────────────────────────

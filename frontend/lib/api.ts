@@ -9,7 +9,9 @@
  * POST bodies). Event payloads match what `app/api/query_stream.py` emits.
  */
 
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_URL =
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
 
 /** Mirrors backend settings.NLI_CONFIDENCE_THRESHOLD (Phase 36). */
 export const NLI_CONFIDENCE_THRESHOLD = 0.85;
@@ -238,10 +240,19 @@ async function parseErrorResponse(res: Response): Promise<ApiError> {
 /* ────────────────────────── REST functions ────────────────────────── */
 
 export async function getDocuments(): Promise<DocumentItem[]> {
-  const res = await fetch(`${API_URL}/api/v1/documents`, { cache: "no-store" });
-  if (!res.ok) throw await parseErrorResponse(res);
-  const data = (await res.json()) as { documents: DocumentItem[]; total: number };
-  return data.documents ?? [];
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`${API_URL}/api/v1/documents`, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!res.ok) throw await parseErrorResponse(res);
+    const data = (await res.json()) as { documents: DocumentItem[]; total: number };
+    return data.documents ?? [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 export async function uploadDocument(file: File): Promise<DocumentUploadResponse> {

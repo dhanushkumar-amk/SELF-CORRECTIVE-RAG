@@ -32,6 +32,8 @@ client = TestClient(app, raise_server_exceptions=False)
 # 1. Explicit Exception -> HTTP Status Mapping
 # ────────────────────────────────────────────────────────────────────────────
 
+SECRET_INTERNAL_TOKEN = "internal-secret-token-xyz123"  # pragma: allowlist secret
+
 
 def _make_probe_app() -> FastAPI:
     """Build a minimal FastAPI app with the centralized handlers and probe routes."""
