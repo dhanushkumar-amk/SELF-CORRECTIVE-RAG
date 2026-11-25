@@ -9,8 +9,7 @@ Architecture & Design Decisions:
    dependencies (e.g., spaCy's 15MB+ binary model downloads).
 
 2. Defensive Fallback Strategy:
-   If NLTK resource download or tokenization encounters an issue (e.g. offline environment),
-   falls back gracefully to regex sentence boundary splitting (`r'(?<=[.!?])\s+'`).
+   If the installed Punkt data is unavailable, uses punctuation and abbreviation rules.
 
 3. Claim Atomicity Verification & Decomposition:
    Checks whether LLM-generated `Claim` instances contain compound/multiple sentences.
@@ -27,7 +26,6 @@ Architecture & Design Decisions:
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from app.core.logging import get_logger
 from app.models.schemas import Claim
@@ -40,33 +38,23 @@ __all__ = [
     "split_into_sentences",
 ]
 
-_NLTK_INITIALIZED = False
+_TITLE_END = re.compile(r"\b(?:Mr|Mrs|Ms|Dr|Prof|Sr|Jr)\.$", re.IGNORECASE)
+_INITIALS_END = re.compile(r"\b(?:[A-Z]\.)+$")
+_SENTENCE_GAP = re.compile(r"(?<=[.!?])\s+")
 
 
-def _ensure_nltk_punkt() -> bool:
-    """Ensure NLTK punkt and punkt_tab tokenizer resources are downloaded and available."""
-    global _NLTK_INITIALIZED
-    if _NLTK_INITIALIZED:
-        return True
-
-    try:
-        import nltk
-
-        try:
-            nltk.data.find("tokenizers/punkt")
-        except LookupError:
-            nltk.download("punkt", quiet=True)
-
-        try:
-            nltk.data.find("tokenizers/punkt_tab")
-        except LookupError:
-            nltk.download("punkt_tab", quiet=True)
-
-        _NLTK_INITIALIZED = True
-        return True
-    except Exception as exc:
-        logger.warning("Failed to initialize NLTK punkt tokenizer (%s). Falling back to regex splitter.", exc)
-        return False
+def _split_without_punkt(text: str) -> list[str]:
+    sentences = []
+    start = 0
+    for gap in _SENTENCE_GAP.finditer(text):
+        segment = text[start:gap.start()]
+        next_char = text[gap.end():gap.end() + 1]
+        if _TITLE_END.search(segment) or (_INITIALS_END.search(segment) and next_char.islower()):
+            continue
+        sentences.append(segment)
+        start = gap.end()
+    sentences.append(text[start:])
+    return sentences
 
 
 def split_into_sentences(text: str) -> list[str]:
@@ -83,20 +71,12 @@ def split_into_sentences(text: str) -> list[str]:
 
     cleaned_text = text.strip()
 
-    if _ensure_nltk_punkt():
-        try:
-            import nltk
+    try:
+        from nltk import sent_tokenize
 
-            raw_sentences = nltk.sent_tokenize(cleaned_text)
-            sentences = [s.strip() for s in raw_sentences if s and s.strip()]
-            if sentences:
-                return sentences
-        except Exception as exc:
-            logger.debug("NLTK sentence tokenize error (%s). Falling back to regex.", exc)
-
-    # Fallback regex sentence tokenizer: splits on punctuation (. ! ?) followed by whitespace
-    raw_sentences = re.split(r"(?<=[.!?])\s+", cleaned_text)
-    return [s.strip() for s in raw_sentences if s and s.strip()]
+        return sent_tokenize(cleaned_text)
+    except (ImportError, LookupError):
+        return _split_without_punkt(cleaned_text)
 
 
 def is_atomic_claim(claim_text: str) -> bool:

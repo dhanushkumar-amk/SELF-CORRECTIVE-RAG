@@ -103,6 +103,7 @@ class QueryRequest(BaseModel):
         examples=["3fa85f64-5717-4562-b3fc-2c963f66afa6"],
         description="Optional document UUID for single-document retrieval scoping",
     )
+    enable_correction: bool = True
     stream: bool = Field(
         default=True,
         examples=[True],

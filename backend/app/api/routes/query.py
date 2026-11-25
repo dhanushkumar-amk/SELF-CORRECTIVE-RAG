@@ -16,6 +16,9 @@ from __future__ import annotations
 import time
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
+
+from app.retrieval.local_passages import find_passages
 
 from app.api.query_stream import stream_query_execution
 from app.core.config import settings
@@ -27,6 +30,11 @@ from app.models.api_models import ErrorResponse, QueryRequest, QueryResponse
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+
+@router.get("/options", summary="Get the active query mode and upload limit")
+def query_options() -> dict[str, str | int]:
+    return {"mode": settings.RAG_MODE, "max_upload_mb": settings.MAX_UPLOAD_SIZE_MB}
 
 
 @router.post(
@@ -70,6 +78,7 @@ async def query_rag(request: QueryRequest) -> QueryResponse | StreamingResponse:
             stream_query_execution(
                 query=request.query,
                 document_id=request.document_id,
+                enable_correction=request.enable_correction,
             ),
             media_type="text/event-stream",
             headers={
@@ -91,12 +100,15 @@ async def query_rag(request: QueryRequest) -> QueryResponse | StreamingResponse:
         "query": request.query,
         "document_id": request.document_id,
         "retry_count": 0,
-        "max_retries": settings.CORRECTION_MAX_RETRIES,
+        "max_retries": settings.CORRECTION_MAX_RETRIES if request.enable_correction else 0,
     }
 
     # Exceptions propagate to the centralized handlers in app.core.exceptions:
     # GenerationError -> 503, unexpected failures -> generic 500 (no leakage).
-    final_state = app_graph.invoke(initial_state)
+    if settings.RAG_MODE == "local":
+        final_state = await run_in_threadpool(find_passages, request.query, request.document_id)
+    else:
+        final_state = await run_in_threadpool(app_graph.invoke, initial_state)
     duration_ms = (time.perf_counter() - start_t) * 1000.0
 
     return QueryResponse(

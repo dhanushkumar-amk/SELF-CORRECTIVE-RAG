@@ -1,16 +1,17 @@
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    build: ./backend
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - path: ./backend/.env
+        required: false
     environment:
-      - REQUIRE_API_KEYS=false
-      - ENVIRONMENT=docker
+      RAG_MODE: ${RAG_MODE:-local}
+      UPLOAD_DIR: /data/uploads
+      HF_HOME: /data/models
     volumes:
-      - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      - rag-data:/data
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
@@ -21,20 +22,14 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
       args:
-        # Inside Docker, the frontend's browser still reaches backend via
-        # the host-mapped port. For SSR, use http://backend:8000.
-        NEXT_PUBLIC_API_URL: http://localhost:8000
+        BACKEND_URL: http://backend:8000
     ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
+      - "127.0.0.1:3000:3000"
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  rag-data:

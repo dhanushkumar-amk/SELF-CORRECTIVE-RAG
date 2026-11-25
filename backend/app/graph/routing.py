@@ -75,7 +75,7 @@ def correction_router(state: RAGState) -> str:
     max_retries = state.get("max_retries", settings.CORRECTION_MAX_RETRIES)
 
     failed_claims = get_failed_claims(claims)
-    all_verified = bool(claims) and len(failed_claims) == 0
+    all_verified = not failed_claims
 
     if all_verified:
         logger.info(

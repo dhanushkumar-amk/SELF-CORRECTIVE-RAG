@@ -115,6 +115,7 @@ class Settings(BaseSettings):
 
     # ── Safety / CI Flags ─────────────────────────────────────────────────
     # Set to False during local scaffolding or CI pipelines without external keys
+    RAG_MODE: Literal["cloud", "local"] = "cloud"
     REQUIRE_API_KEYS: bool = True
 
     model_config = {
@@ -140,7 +141,7 @@ class Settings(BaseSettings):
         Ensures errors are caught immediately during boot instead of failing silently
         or crashing with cryptic tracebacks deep inside worker threads.
         """
-        if not self.REQUIRE_API_KEYS:
+        if self.RAG_MODE == "local" or not self.REQUIRE_API_KEYS:
             return self
 
         errors: list[str] = []
@@ -176,7 +177,7 @@ class Settings(BaseSettings):
 
         # 4. In production, check for at least one LLM key (reserved for Phase 25+)
         if self.ENVIRONMENT == "production":
-            if not self.GEMINI_API_KEY and not self.GROQ_API_KEY:
+            if not any(key and not _is_placeholder(key) for key in (self.GEMINI_API_KEY, self.GROQ_API_KEY)):
                 errors.append(
                     "* In production, at least one LLM key (GEMINI_API_KEY or GROQ_API_KEY) must be set.\n"
                     "  -> Gemini (free): https://ai.google.dev/\n"

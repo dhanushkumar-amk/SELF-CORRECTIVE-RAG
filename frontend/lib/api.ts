@@ -11,7 +11,7 @@
 
 export const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
-  (typeof window !== "undefined" ? "" : "http://127.0.0.1:8000");
+  "";
 
 /** Mirrors backend settings.NLI_CONFIDENCE_THRESHOLD (Phase 36). */
 export const NLI_CONFIDENCE_THRESHOLD = 0.85;
@@ -28,6 +28,8 @@ export interface DocumentItem {
   chunk_count?: number | null;
   page_count?: number | null;
   failure_reason?: string | null;
+  retryable?: boolean | null;
+  current_stage?: string | null;
 }
 
 export interface DocumentUploadResponse {
@@ -266,15 +268,21 @@ export async function uploadDocument(file: File): Promise<DocumentUploadResponse
   return (await res.json()) as DocumentUploadResponse;
 }
 
-export async function processDocument(documentId: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/v1/documents/${documentId}/process`, {
+export async function getOptions(): Promise<{ mode: "local" | "cloud"; max_upload_mb: number }> {
+  const res = await fetch(`${API_URL}/api/v1/query/options`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw await parseErrorResponse(res);
+  return res.json();
+}
+
+export async function processDocument(documentId: string, retry = false): Promise<void> {
+  const res = await fetch(`${API_URL}/api/v1/documents/${encodeURIComponent(documentId)}/${retry ? "retry?sync=false" : "process"}`, {
     method: "POST",
   });
   if (!res.ok) throw await parseErrorResponse(res);
 }
 
 export async function deleteDocument(documentId: string): Promise<void> {
-  const res = await fetch(`${API_URL}/api/v1/documents/${documentId}`, {
+  const res = await fetch(`${API_URL}/api/v1/documents/${encodeURIComponent(documentId)}`, {
     method: "DELETE",
   });
   if (!res.ok) throw await parseErrorResponse(res);
@@ -312,26 +320,28 @@ export async function streamQuery({
   if (!res.ok) throw await parseErrorResponse(res);
   if (!res.body) throw new ApiError(0, "STREAM_ERROR", "Response body is empty.");
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   let buffer = "";
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += value ?? "";
+      const blocks = buffer.split(/\r?\n\r?\n/);
+      buffer = blocks.pop() ?? "";
+      if (done && buffer.trim()) blocks.push(buffer);
 
-    const blocks = buffer.split("\n\n");
-    buffer = blocks.pop() ?? "";
-
-    for (const block of blocks) {
-      if (!block.trim()) continue;
-      try {
+      for (const block of blocks) {
         const event = parseSseBlock(block);
-        if (event) onEvent(event);
-      } catch {
-        // Malformed/mid-stream chunk — ignore and keep consuming the stream.
+        if (!event) continue;
+        onEvent(event);
+        if (event.type === "final_answer" || event.type === "error") return;
       }
+      if (done) break;
     }
+    throw new ApiError(0, "STREAM_INTERRUPTED", "The connection closed before the answer arrived. Try asking again.");
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }

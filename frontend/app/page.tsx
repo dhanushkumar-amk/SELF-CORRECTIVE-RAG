@@ -2,885 +2,353 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Send,
-  ShieldCheck,
-  CheckCircle2,
-  AlertTriangle,
-  RefreshCw,
-  FileText,
-  HelpCircle,
-  UploadCloud,
-  Loader2,
-  Trash2,
-  Layers,
-  Plus,
-  Sun,
-  Moon,
-  PanelLeftClose,
-  PanelLeft,
-  BarChart3,
-  User,
-  Bot,
-  Zap,
-  Activity,
-  WifiOff,
+  BookOpen, Check, ChevronDown, CircleHelp, FileSearch, FileText, Layers3, LoaderCircle,
+  Menu, Moon, Plus, RotateCw, ScanLine, Search, Send, ShieldCheck, Sparkles, Square, Sun,
+  Trash2, UploadCloud, X,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ClaimBadge } from "@/components/ClaimBadge";
 import {
-  API_URL,
-  ApiError,
-  deleteDocument,
-  getClaimStatus,
-  getDocuments,
-  processDocument,
-  streamQuery,
-  uploadDocument,
-  type ClaimWithSource,
-  type DocumentItem,
-  type SseEvent,
+  deleteDocument, getClaimStatus, getDocuments, getOptions, processDocument,
+  streamQuery, uploadDocument, type ClaimWithSource, type DocumentItem, type SseEvent,
 } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
-/* ═══════════════════════════════════════════
-   Constants
-   ═══════════════════════════════════════════ */
-
-const SAMPLE_PROMPTS = [
-  "What were Q3 revenues and key growth metrics?",
-  "Is the deployment process fully automated?",
-  "Summarize the risk factors mentioned in the report.",
+const prompts = [
+  { icon: ScanLine, title: "Summarize a document", question: "What are the key milestones in the project brief?" },
+  { icon: Search, title: "Find a specific detail", question: "What is the budget for the pilot program?" },
+  { icon: ShieldCheck, title: "Identify risks", question: "What dependencies could delay the pilot?" },
 ];
 
-const PIPELINE_STEPS = ["retrieving", "generating", "verifying", "correcting"] as const;
-type PipelineStep = (typeof PIPELINE_STEPS)[number] | "done" | "error";
+const stages = [
+  { label: "Retrieve passages", icon: Search, event: "retrieval_started" },
+  { label: "Draft answer", icon: Sparkles, event: "generation_started" },
+  { label: "Verify claims", icon: ShieldCheck, event: "verification_started" },
+  { label: "Correct claims", icon: RotateCw, event: "correction_triggered" },
+] as const;
 
-const STEP_LABELS: Record<PipelineStep, string> = {
-  retrieving: "Retrieving relevant information…",
-  generating: "Generating answer…",
-  verifying: "Verifying claims…",
-  correcting: "Found an issue, double-checking…",
-  done: "Answer ready",
-  error: "Something went wrong",
-};
+type Answer = Extract<SseEvent, { type: "final_answer" }>;
+type Turn = { id: string; question: string; answer?: Answer; error?: string; stopped?: boolean };
+type Options = Awaited<ReturnType<typeof getOptions>>;
 
-/* ═══════════════════════════════════════════
-   Types
-   ═══════════════════════════════════════════ */
-
-interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  claims?: ClaimWithSource[];
-  finalStatus?: string;
-  correctionTriggered?: boolean;
-  executionTimeMs?: number;
-  error?: { code: string; detail: string };
+function errorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.name !== "TypeError" ? error.message : fallback;
 }
-
-/* ═══════════════════════════════════════════
-   Theme Hook
-   ═══════════════════════════════════════════ */
-
-function useTheme() {
-  const [theme, setThemeState] = useState<"dark" | "light">(() => {
-    if (typeof window === "undefined") return "dark";
-    const saved = localStorage.getItem("rag-theme") as "dark" | "light" | null;
-    return saved ?? "dark";
-  });
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, [theme]);
-
-  const toggle = useCallback(() => {
-    setThemeState((current) => {
-      const next = current === "dark" ? "light" : "dark";
-      localStorage.setItem("rag-theme", next);
-      return next;
-    });
-  }, []);
-
-  return { theme, toggle };
-}
-
-/* ═══════════════════════════════════════════
-   Small helpers
-   ═══════════════════════════════════════════ */
-
-function docStatusColor(status: DocumentItem["status"]) {
-  if (status === "ready") return "bg-emerald-500";
-  if (status === "failed") return "bg-red-500";
-  return "bg-amber-500 animate-pulse";
-}
-
-/* ═══════════════════════════════════════════
-   Main Page Component
-   ═══════════════════════════════════════════ */
 
 export default function Home() {
-  const { theme, toggle: toggleTheme } = useTheme();
-
-  // Layout
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() =>
-    typeof window === "undefined" ? true : window.matchMedia("(min-width: 768px)").matches,
-  );
-
-  // Documents
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
-  const [loadingDocs, setLoadingDocs] = useState(true);
-  const [selectedDocId, setSelectedDocId] = useState<string | undefined>();
-  const [uploading, setUploading] = useState(false);
-  const [docError, setDocError] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [options, setOptions] = useState<Options>();
+  const [libraryError, setLibraryError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [sidebar, setSidebar] = useState(false);
+  const [dark, setDark] = useState(false);
+  const [scope, setScope] = useState("");
+  const [correction, setCorrection] = useState(true);
+  const [question, setQuestion] = useState("");
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [events, setEvents] = useState<SseEvent["type"][]>([]);
+  const [pending, setPending] = useState(false);
+  const [evidence, setEvidence] = useState<ClaimWithSource>();
+  const [removeTarget, setRemoveTarget] = useState<DocumentItem>();
+  const uploadInput = useRef<HTMLInputElement>(null);
+  const composer = useRef<HTMLTextAreaElement>(null);
+  const conversation = useRef<HTMLDivElement>(null);
+  const request = useRef<AbortController | null>(null);
+  const ready = documents.filter(doc => doc.status === "ready");
+  const processing = documents.some(doc => doc.status === "processing");
+  const selected = ready.find(doc => doc.document_id === scope);
+  const latest = turns.at(-1);
+  const local = options?.mode === "local";
 
-  // Settings
-  const [enableCorrection, setEnableCorrection] = useState(true);
+  const refresh = useCallback(async () => {
+    setDocuments(await getDocuments());
+  }, []);
 
-  // Chat
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
-  const [pipelineStep, setPipelineStep] = useState<PipelineStep>("retrieving");
-  const [logs, setLogs] = useState<string[]>([]);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  // ─── Documents ───
-  const fetchDocs = useCallback(async () => {
-    setLoadingDocs(true);
-    setDocError(null);
+  const connect = useCallback(async () => {
+    setLoading(true);
+    setLibraryError("");
     try {
-      setDocuments(await getDocuments());
-    } catch (err) {
-      setDocError(err instanceof ApiError ? err.message : "Could not load documents.");
+      const [nextOptions, nextDocs] = await Promise.all([getOptions(), getDocuments()]);
+      setOptions(nextOptions);
+      setDocuments(nextDocs);
+    } catch {
+      setOptions(undefined);
+      setLibraryError("Could not connect to the document service.");
     } finally {
-      setLoadingDocs(false);
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchDocs();
-  }, [fetchDocs]);
-
-  const handleUpload = async (file: File) => {
-    setUploading(true);
-    setDocError(null);
-    try {
-      const uploaded = await uploadDocument(file);
-      await processDocument(uploaded.document_id);
-      await fetchDocs();
-      setSelectedDocId(uploaded.document_id);
-    } catch (err) {
-      setDocError(
-        err instanceof ApiError ? err.message : "Upload failed. Is the backend running?",
-      );
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      await deleteDocument(id);
-    } catch {
-      /* deletion is best-effort; refresh shows remaining state */
-    }
-    if (selectedDocId === id) setSelectedDocId(undefined);
-    fetchDocs();
-  };
-
-  // ─── Chat ───
-  const newChat = () => {
-    setMessages([]);
-    setLogs([]);
-    setPipelineStep("retrieving");
-  };
-
-  const sendQuery = async (text?: string) => {
-    const q = (text ?? input).trim();
-    if (!q || streaming) return;
-
-    setInput("");
-    setStreaming(true);
-    setPipelineStep("retrieving");
-    setLogs(["Connecting to pipeline…"]);
-
-    const userMsg: Message = { id: Date.now().toString(), role: "user", content: q };
-    const assistantId = (Date.now() + 1).toString();
-    setMessages((prev) => [...prev, userMsg]);
-
-    let correctionTriggered = false;
-
-    const handleEvent = (event: SseEvent) => {
-      switch (event.type) {
-        case "retrieval_started":
-          setPipelineStep("retrieving");
-          setLogs((prev) => [...prev, "Hybrid Pinecone + BM25 search…"]);
-          break;
-        case "retrieval_complete":
-          setLogs((prev) => [
-            ...prev,
-            `Retrieved ${event.chunk_count} relevant passage${event.chunk_count === 1 ? "" : "s"}`,
-          ]);
-          break;
-        case "generation_started":
-          setPipelineStep("generating");
-          setLogs((prev) => [...prev, "Generating candidate answer…"]);
-          break;
-        case "generation_complete":
-          setLogs((prev) => [...prev, `Extracted ${event.claim_count} claims`]);
-          break;
-        case "verification_started":
-          setPipelineStep("verifying");
-          setLogs((prev) => [...prev, "DeBERTa-v3 NLI verification…"]);
-          break;
-        case "verification_complete":
-          setLogs((prev) => [...prev, `Verification pass complete (${event.claims.length} claims)`]);
-          break;
-        case "correction_triggered":
-          correctionTriggered = true;
-          setPipelineStep("correcting");
-          setLogs((prev) => [
-            ...prev,
-            `Correction loop triggered — ${event.failed_claims.length} claim(s) flagged`,
-          ]);
-          break;
-        case "final_answer":
-          setPipelineStep("done");
-          setLogs((prev) => [...prev, "Complete ✓"]);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: assistantId,
-              role: "assistant",
-              content: event.final_answer_text,
-              claims: event.claims,
-              finalStatus: event.final_status,
-              correctionTriggered,
-              executionTimeMs: event.latency_ms,
-            },
-          ]);
-          break;
-        case "error":
-          setPipelineStep("error");
-          setLogs((prev) => [...prev, `Pipeline error: ${event.error}`]);
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: assistantId,
-              role: "assistant",
-              content: "",
-              error: { code: event.error, detail: event.detail },
-            },
-          ]);
-          break;
+    const initialLoad = setTimeout(() => {
+      setDark(localStorage.getItem("rag-theme") === "dark");
+      void connect();
+    }, 0);
+    return () => clearTimeout(initialLoad);
+  }, [connect]);
+  useEffect(() => {
+    if (!processing) return;
+    let stopped = false;
+    let timeout: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const nextDocs = await getDocuments();
+        if (stopped) return;
+        setDocuments(nextDocs);
+        setLibraryError(current => current === "Lost connection while indexing. Retrying…" ? "" : current);
+        if (!nextDocs.some(doc => doc.status === "processing")) return;
+      } catch {
+        if (!stopped) setLibraryError("Lost connection while indexing. Retrying…");
       }
-    };
+      if (!stopped) timeout = setTimeout(poll, 1500);
+    }
+    timeout = setTimeout(poll, 900);
+    return () => { stopped = true; clearTimeout(timeout); };
+  }, [processing]);
+  useEffect(() => {
+    if (conversation.current) conversation.current.scrollTop = conversation.current.scrollHeight;
+  }, [turns, pending]);
+  useEffect(() => () => request.current?.abort(), []);
+
+  async function addDocument(getFile: () => Promise<File>) {
+    if (busy || !options) return;
+    setBusy(true);
+    setLibraryError("");
+    try {
+      const file = await getFile();
+      if (!file.name.toLowerCase().endsWith(".pdf")) throw new Error("Choose a PDF file.");
+      if (file.size > options.max_upload_mb * 1024 * 1024) {
+        throw new Error(`PDFs must be ${options.max_upload_mb} MB or smaller.`);
+      }
+      const doc = await uploadDocument(file);
+      setScope(doc.document_id);
+      setDocuments(current => [{ ...doc, current_stage: "extracting", status: "processing" }, ...current]);
+      await processDocument(doc.document_id);
+    } catch (error) {
+      setLibraryError(errorMessage(error, "Upload failed. Check the backend connection."));
+      await refresh().catch(() => {});
+    } finally {
+      setBusy(false);
+      if (uploadInput.current) uploadInput.current.value = "";
+    }
+  }
+
+  async function loadSample() {
+    await addDocument(async () => {
+      const response = await fetch("/project-brief.pdf");
+      if (!response.ok) throw new Error("Could not load the example PDF.");
+      return new File([await response.blob()], "Example project brief.pdf", { type: "application/pdf" });
+    });
+  }
+
+  async function actOnDocument(doc: DocumentItem, remove = false) {
+    setBusy(true);
+    setLibraryError("");
+    try {
+      if (remove) {
+        await deleteDocument(doc.document_id);
+        if (scope === doc.document_id) setScope("");
+        setRemoveTarget(undefined);
+      } else {
+        await processDocument(doc.document_id, doc.status === "failed");
+      }
+      await refresh();
+    } catch (error) {
+      setLibraryError(errorMessage(error, "The document operation failed. Try again."));
+      setRemoveTarget(undefined);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function ask() {
+    const text = question.trim();
+    if (!text || request.current || !ready.length || !options) return;
+    const controller = new AbortController();
+    request.current = controller;
+    const id = crypto.randomUUID();
+    const update = (result: Partial<Turn>) => setTurns(previous =>
+      previous.map(turn => turn.id === id ? { ...turn, ...result } : turn),
+    );
+    setTurns(previous => [...previous, { id, question: text }]);
+    setQuestion("");
+    setPending(true);
+    setEvents([]);
+    setEvidence(undefined);
 
     try {
       await streamQuery({
-        query: q,
-        documentId: selectedDocId ?? null,
-        enableCorrection,
-        onEvent: handleEvent,
+        query: text, documentId: selected?.document_id, enableCorrection: correction,
+        signal: controller.signal,
+        onEvent(event) {
+          setEvents(previous => [...previous, event.type]);
+          if (event.type === "final_answer") {
+            update({ answer: event });
+          } else if (event.type === "error") {
+            update({ error: event.detail });
+          }
+        },
       });
-    } catch (err) {
-      setPipelineStep("error");
-      if (err instanceof ApiError) {
-        setMessages((prev) => [
-          ...prev,
-          { id: assistantId, role: "assistant", content: "", error: { code: err.code, detail: err.message } },
-        ]);
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: assistantId,
-            role: "assistant",
-            content: "",
-            error: {
-              code: "CONNECTION_ERROR",
-              detail: `Cannot reach the backend at ${API_URL}. Make sure the FastAPI server is running.`,
-            },
-          },
-        ]);
-      }
+    } catch (error) {
+      update(controller.signal.aborted
+        ? { stopped: true }
+        : { error: errorMessage(error, "Could not connect to the answer service. Try again.") });
     } finally {
-      setStreaming(false);
+      request.current = null;
+      setPending(false);
     }
-  };
+  }
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, logs]);
+  function toggleTheme() {
+    setDark(!dark);
+    localStorage.setItem("rag-theme", dark ? "light" : "dark");
+  }
 
-  /* ═══════════════════════════════════════════
-     Summary badge
-     ═══════════════════════════════════════════ */
+  function newQuery() {
+    setTurns([]);
+    setEvidence(undefined);
+    setEvents([]);
+    setQuestion("");
+    setSidebar(false);
+    composer.current?.focus();
+  }
 
-  const summaryFor = (msg: Message) => {
-    if (!msg.claims || msg.claims.length === 0) return null;
-    const verified = msg.claims.filter((c) => getClaimStatus(c) === "verified").length;
-    const total = msg.claims.length;
-    const status = msg.finalStatus ?? "unverifiable";
-
-    const style =
-      status === "fully_verified"
-        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-        : status.startsWith("partially_verified")
-          ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20"
-          : "bg-zinc-500/10 text-zinc-500 border-zinc-500/20 dark:text-zinc-400";
-
-    const icon =
-      status === "fully_verified" ? (
-        <CheckCircle2 className="h-3 w-3" />
-      ) : (
-        <AlertTriangle className="h-3 w-3" />
-      );
-
-    const label =
-      status === "fully_verified"
-        ? "Fully Verified"
-        : status.startsWith("partially_verified")
-          ? "Partially Verified"
-          : "Unverifiable";
-
-    return { style, icon, label, verified, total };
-  };
-
-  /* ═══════════════════════════════════════════
-     RENDER
-     ═══════════════════════════════════════════ */
+  const activeStage = stages.reduce((last, stage, index) => events.includes(stage.event) ? index : last, -1);
+  const verified = latest?.answer?.claims.filter(claim => getClaimStatus(claim) === "verified").length ?? 0;
 
   return (
-    <div className="flex h-full overflow-hidden bg-background text-foreground transition-colors duration-200">
-      {/* ═══════ SIDEBAR ═══════ */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/40 md:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-      <aside
-        className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-full w-[280px] shrink-0 flex-col border-r border-border bg-card",
-          "transform transition-transform duration-200 md:static md:translate-x-0",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full",
-        )}
-      >
-        {/* Sidebar Header */}
-        <div className="flex h-14 items-center justify-between border-b border-border px-4">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-500" />
-            <span className="text-[13px] font-semibold tracking-tight text-foreground">
-              Self-Correcting RAG
-            </span>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => setSidebarOpen(false)}
-            className="text-muted-foreground hover:text-foreground md:hidden"
-          >
-            <PanelLeftClose className="h-4 w-4" />
-          </Button>
-        </div>
+    <div className={`workspace ${dark ? "dark-workspace" : ""}`}>
+      {sidebar && <button className="scrim" aria-label="Close document library" onClick={() => setSidebar(false)} />}
+      <aside className={`sidebar ${sidebar ? "sidebar-open" : ""}`}>
+        <div className="brand"><span className="brand-mark"><Layers3 size={22} /></span><div><strong>Groundwork</strong><small>Document research</small></div></div>
+        <button className="new-query" disabled={pending} onClick={newQuery}><Plus size={18} /> New query</button>
 
-        {/* New Chat + Upload */}
-        <div className="space-y-2 border-b border-border p-3">
-          <Button
-            variant="default"
-            size="sm"
-            onClick={newChat}
-            className="h-9 w-full justify-start text-[13px]"
-          >
-            <Plus className="mr-2 h-3.5 w-3.5" /> New Query
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="h-9 w-full justify-start text-[13px]"
-          >
-            {uploading ? (
-              <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <UploadCloud className="mr-2 h-3.5 w-3.5" />
-            )}
-            {uploading ? "Processing…" : "Upload PDF"}
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".pdf,.txt"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleUpload(f);
-            }}
-          />
-          {docError && (
-            <p className="text-[11px] leading-snug text-destructive">{docError}</p>
-          )}
-        </div>
-
-        {/* Settings */}
-        <div className="space-y-3 border-b border-border px-4 py-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[12px] text-muted-foreground">NLI Correction Loop</span>
-            <button
-              onClick={() => setEnableCorrection(!enableCorrection)}
-              className={cn(
-                "relative h-[18px] w-8 rounded-full transition-colors",
-                enableCorrection ? "bg-emerald-500" : "bg-muted-foreground/30",
-              )}
-              aria-label="Toggle correction loop"
-            >
-              <span
-                className={cn(
-                  "absolute top-[2px] h-[14px] w-[14px] rounded-full bg-white shadow-sm transition-transform",
-                  enableCorrection ? "left-[16px]" : "left-[2px]",
-                )}
-              />
-            </button>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[12px] text-muted-foreground">Appearance</span>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={toggleTheme}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-            </Button>
-          </div>
-        </div>
-
-        {/* Documents */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="flex items-center justify-between px-4 pb-1 pt-3">
-            <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Documents
-            </span>
-            <button onClick={fetchDocs} className="text-muted-foreground hover:text-foreground">
-              <RefreshCw className={cn("h-3 w-3", loadingDocs && "animate-spin")} />
-            </button>
-          </div>
-
-          <div className="space-y-1 px-3 pb-3">
-            <button
-              onClick={() => setSelectedDocId(undefined)}
-              className={cn(
-                "w-full rounded-lg px-3 py-2 text-left text-[12px] transition-colors",
-                !selectedDocId
-                  ? "bg-accent font-medium text-foreground"
-                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
-              )}
-            >
-              All Documents
-            </button>
-
-            {loadingDocs ? (
-              <div className="space-y-2 px-1 py-3">
-                <Skeleton className="h-9 w-full" />
-                <Skeleton className="h-9 w-full" />
-              </div>
-            ) : docError ? (
-              <div className="my-2 rounded-lg border border-destructive/30 bg-destructive/10 p-2.5 text-center text-[12px] text-destructive">
-                <p className="mb-2 line-clamp-2">{docError}</p>
-                <button
-                  onClick={fetchDocs}
-                  className="rounded border border-destructive/40 bg-background px-2.5 py-1 text-[11px] font-medium text-foreground hover:bg-accent"
-                >
-                  Retry
+        <div className="library-heading"><h2>Library</h2><button className="icon-button" aria-label="Refresh documents" onClick={connect} disabled={loading}><RotateCw size={16} /></button></div>
+        <button className={`library-all ${!scope ? "selected" : ""}`} onClick={() => { setScope(""); setSidebar(false); }}><BookOpen size={17} /> All documents <span>{ready.length}</span></button>
+        <div className="document-list">
+          {loading && <p className="quiet">Loading library…</p>}
+          {!loading && !documents.length && <p className="quiet">Your uploaded PDFs will appear here.</p>}
+          {documents.map(doc => (
+            <div key={doc.document_id} className={`document ${scope === doc.document_id ? "selected" : ""}`}>
+              <div className="document-main">
+                <button className="document-select" disabled={doc.status !== "ready"} onClick={() => { setScope(doc.document_id); setSidebar(false); }}>
+                  <FileText size={17} /><span><strong title={doc.filename}>{doc.filename}</strong>
+                  <small>{doc.status === "ready" ? "Ready" : doc.current_stage ?? doc.status}</small></span>
                 </button>
+                {doc.status !== "processing" && <button className="icon-button" disabled={busy} aria-label={`Remove ${doc.filename}`} onClick={() => setRemoveTarget(doc)}><Trash2 size={15} /></button>}
               </div>
-            ) : documents.length === 0 ? (
-              <div className="py-6 text-center text-[12px] text-muted-foreground">
-                <Layers className="mx-auto mb-1.5 h-5 w-5 opacity-40" />
-                No documents yet — upload a PDF to get started
-              </div>
-            ) : (
-              documents.map((doc) => (
-                <div
-                  key={doc.document_id}
-                  onClick={() => setSelectedDocId(doc.document_id)}
-                  className={cn(
-                    "group flex cursor-pointer items-center justify-between rounded-lg px-3 py-2.5 transition-colors",
-                    selectedDocId === doc.document_id
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                  )}
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <div className="min-w-0">
-                      <div className="truncate text-[12px] font-medium">{doc.filename}</div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {doc.chunk_count ?? 0} chunks · {doc.status}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className={cn("h-1.5 w-1.5 rounded-full", docStatusColor(doc.status))} />
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(doc.document_id);
-                      }}
-                      className="text-muted-foreground opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
-                      aria-label={`Delete ${doc.filename}`}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
+              {doc.failure_reason && <p className="document-error">{doc.failure_reason}</p>}
+              {(doc.status === "uploaded" || (doc.status === "failed" && doc.retryable)) &&
+                <button className="text-action" disabled={busy} onClick={() => actOnDocument(doc)}>{doc.status === "failed" ? "Retry indexing" : "Index document"}</button>}
+            </div>
+          ))}
         </div>
 
-        {/* Sidebar Footer */}
-        <div className="border-t border-border px-4 py-3 text-center text-[11px] text-muted-foreground">
-          DeBERTa-v3 NLI · LangGraph · FastAPI
+        <div className="upload-area">
+          {libraryError && <p className="document-error" role="alert">{libraryError}</p>}
+          <input ref={uploadInput} type="file" accept=".pdf,application/pdf" hidden onChange={event => {
+            const file = event.currentTarget.files?.[0];
+            if (file) void addDocument(async () => file);
+          }} />
+          <button className="upload-button" onClick={() => uploadInput.current?.click()} disabled={busy || !options}>
+            {busy ? <LoaderCircle className="spin" size={19} /> : <UploadCloud size={19} />}
+            <span>{busy ? "Working…" : "Upload PDF"}<small>Up to {options?.max_upload_mb ?? 20} MB</small></span>
+          </button>
+          <button className="sample-button" disabled={busy || !options} onClick={loadSample}>Try an example PDF</button>
         </div>
+        <div className="sidebar-footer"><span className={`status-dot ${options ? "connected" : ""}`} /> {options ? (local ? "Local passage search" : "Cloud verification") : loading ? "Connecting…" : "Service unavailable"}</div>
       </aside>
 
-      {/* ═══════ MAIN CHAT AREA ═══════ */}
-      <div className="flex h-full min-w-0 flex-1 flex-col">
-        {/* Top Bar */}
-        <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background px-4">
-          <div className="flex items-center gap-3">
-            {!sidebarOpen && (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setSidebarOpen(true)}
-                className="text-muted-foreground"
-              >
-                <PanelLeft className="h-4 w-4" />
-              </Button>
-            )}
-            <div className="flex items-center gap-2">
-              {!sidebarOpen && <ShieldCheck className="h-4 w-4 text-emerald-500" />}
-              <span className="text-[13px] font-medium text-foreground">
-                {selectedDocId
-                  ? `Querying: ${documents.find((d) => d.document_id === selectedDocId)?.filename ?? selectedDocId.slice(0, 12) + "…"}`
-                  : "All Documents"}
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {enableCorrection && (
-              <span className="rounded border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-                NLI Active
-              </span>
-            )}
-            {!sidebarOpen && (
-              <Button variant="ghost" size="icon-xs" onClick={toggleTheme} className="text-muted-foreground">
-                {theme === "dark" ? <Sun className="h-3.5 w-3.5" /> : <Moon className="h-3.5 w-3.5" />}
-              </Button>
-            )}
-          </div>
+      <main className="main">
+        <header className="topbar">
+          <div><button className="icon-button mobile-menu" aria-label="Open document library" onClick={() => setSidebar(true)}><Menu size={21} /></button><span>Workspace</span><span className="breadcrumb-divider">/</span><strong>Research</strong></div>
+          <div className="topbar-controls">{options?.mode === "cloud" && <label className="correction-toggle"><input type="checkbox" checked={correction} disabled={pending} onChange={event => setCorrection(event.target.checked)} /> Self-correction</label>}
+          {local && <span className="mode-label"><FileSearch size={15} /> Passage search</span>}
+          <button className="icon-button" aria-label={dark ? "Switch to light theme" : "Switch to dark theme"} onClick={toggleTheme}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button></div>
         </header>
 
-        {/* Message Scroll Area */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
-            {/* Empty State */}
-            {messages.length === 0 && !streaming && (
-              <div className="flex flex-col items-center justify-center pb-12 pt-20 text-center">
-                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-border bg-card">
-                  <ShieldCheck className="h-6 w-6 text-emerald-500" />
-                </div>
-                <h2 className="mb-1 text-lg font-semibold text-foreground">Self-Correcting RAG</h2>
-                <p className="max-w-sm text-[13px] text-muted-foreground">
-                  Ask a question about your documents. Every claim is verified for factual
-                  accuracy using DeBERTa-v3 NLI — and corrected automatically when it fails.
-                </p>
-                <div className="mt-6 flex flex-wrap justify-center gap-2">
-                  {SAMPLE_PROMPTS.map((p, i) => (
-                    <button
-                      key={i}
-                      onClick={() => sendQuery(p)}
-                      className="max-w-[260px] rounded-lg border border-border bg-card px-3.5 py-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                    >
-                      {p}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Messages */}
-            {messages.map((msg) => {
-              if (msg.role === "user") {
-                return (
-                  <div key={msg.id} className="flex justify-end gap-3">
-                    <div className="order-first max-w-[85%] min-w-0">
-                      <div className="rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-[14px] leading-relaxed text-primary-foreground">
-                        {msg.content}
-                      </div>
-                    </div>
-                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary">
-                      <User className="h-3.5 w-3.5 text-primary-foreground" />
-                    </div>
-                  </div>
-                );
-              }
-
-              // ── Error message ──
-              if (msg.error) {
-                const rateLimited = msg.error.code === "RATE_LIMIT_EXCEEDED";
-                const generationFailed = msg.error.code === "GENERATION_ERROR";
-                return (
-                  <div key={msg.id} className="flex gap-3">
-                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-card">
-                      <Bot className="h-3.5 w-3.5 text-foreground" />
-                    </div>
-                    <Alert variant="destructive" className="max-w-[85%] min-w-0">
-                      <WifiOff className="h-4 w-4" />
-                      <AlertTitle>
-                        {rateLimited
-                          ? "Rate limit exceeded"
-                          : generationFailed
-                            ? "Answer generation failed"
-                            : "Request failed"}
-                      </AlertTitle>
-                      <AlertDescription>{msg.error.detail}</AlertDescription>
-                    </Alert>
-                  </div>
-                );
-              }
-
-              // ── No relevant information ──
-              const noResults =
-                (!msg.claims || msg.claims.length === 0) &&
-                msg.finalStatus === "unverifiable";
-
-              const summary = summaryFor(msg);
-
-              return (
-                <div key={msg.id} className="flex gap-3">
-                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-card">
-                    <Bot className="h-3.5 w-3.5 text-foreground" />
-                  </div>
-
-                  <div className="max-w-[85%] min-w-0 flex-1 space-y-3">
-                    {/* Status header + summary */}
-                    <div className="flex flex-wrap items-center gap-2">
-                      {noResults ? (
-                        <span className="inline-flex items-center gap-1 rounded-md border border-zinc-500/20 bg-zinc-500/10 px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400">
-                          <HelpCircle className="h-3 w-3" /> No Relevant Information
-                        </span>
-                      ) : summary ? (
-                        <>
-                          <span
-                            className={cn(
-                              "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium",
-                              summary.style,
-                            )}
-                          >
-                            {summary.icon} {summary.label}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {summary.verified}/{summary.total} claims verified
-                          </span>
-                        </>
-                      ) : null}
-
-                      {msg.executionTimeMs != null && msg.executionTimeMs > 0 && (
-                        <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                          <Activity className="h-3 w-3" /> {msg.executionTimeMs}ms
-                        </span>
-                      )}
-                      {msg.correctionTriggered && (
-                        <span className="inline-flex items-center gap-1 rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                          <RefreshCw className="h-3 w-3" /> Correction Applied
-                        </span>
-                      )}
-                    </div>
-
-                    {noResults ? (
-                      <Alert>
-                        <FileText className="h-4 w-4" />
-                        <AlertTitle>No relevant information found</AlertTitle>
-                        <AlertDescription>
-                          None of your ingested documents contain passages relevant enough to
-                          answer this question. Try rephrasing, or query a different document.
-                        </AlertDescription>
-                      </Alert>
-                    ) : (
-                      <>
-                        {/* Answer text */}
-                        {msg.content && (
-                          <div className="text-[14px] leading-relaxed text-foreground">
-                            {msg.content}
-                          </div>
-                        )}
-
-                        {/* Claims breakdown */}
-                        {msg.claims && msg.claims.length > 0 && (
-                          <div className="overflow-hidden rounded-xl border border-border bg-card">
-                            <div className="flex items-center justify-between border-b border-border bg-muted/30 px-3.5 py-2.5">
-                              <span className="flex items-center gap-1.5 text-[11px] font-semibold text-foreground">
-                                <BarChart3 className="h-3 w-3 text-muted-foreground" />
-                                {msg.claims.length} Verified Claim{msg.claims.length === 1 ? "" : "s"}
-                              </span>
-                              <div className="flex items-center gap-1.5">
-                                {msg.claims.map((c, j) => (
-                                  <span
-                                    key={j}
-                                    className={cn(
-                                      "h-1.5 w-1.5 rounded-full",
-                                      getClaimStatus(c) === "verified"
-                                        ? "bg-emerald-500"
-                                        : getClaimStatus(c) === "contradicted"
-                                          ? "bg-red-500"
-                                          : getClaimStatus(c) === "unverifiable"
-                                            ? "bg-zinc-500"
-                                            : "bg-amber-500",
-                                    )}
-                                  />
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="divide-y divide-border">
-                              {msg.claims.map((claim) => (
-                                <div key={claim.claim_id} className="space-y-1.5 px-3.5 py-3">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <ClaimBadge claim={claim} />
-                                    {claim.page_number != null && (
-                                      <span className="shrink-0 text-[11px] text-muted-foreground">
-                                        {claim.filename ? `${claim.filename} · ` : ""}p.{" "}
-                                        {claim.page_number}
-                                        {claim.page_number_end && claim.page_number_end !== claim.page_number
-                                          ? `–${claim.page_number_end}`
-                                          : ""}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[13px] leading-snug text-foreground/80">
-                                    {claim.claim_text}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Streaming pipeline indicator */}
-            {streaming && (
-              <div className="flex gap-3">
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-card">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin text-foreground" />
-                </div>
-                <div className="max-w-md flex-1 space-y-3 rounded-xl border border-border bg-card p-4">
-                  {/* Pipeline Progress */}
-                  <div className="flex items-center gap-1.5">
-                    {PIPELINE_STEPS.map((step) => {
-                      const stepIdx = (PIPELINE_STEPS as readonly string[]).indexOf(step);
-                      const currentIdx = (PIPELINE_STEPS as readonly string[]).indexOf(pipelineStep);
-                      const active = pipelineStep === step;
-                      const passed = currentIdx > stepIdx;
-                      return (
-                        <div
-                          key={step}
-                          className={cn(
-                            "h-1 flex-1 rounded-full transition-colors",
-                            active
-                              ? "animate-pulse bg-foreground"
-                              : passed
-                                ? "bg-emerald-500"
-                                : "bg-muted",
-                          )}
-                        />
-                      );
-                    })}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-[12px] text-muted-foreground">
-                      {STEP_LABELS[pipelineStep]}
-                    </span>
-                  </div>
-                  <div className="max-h-20 space-y-0.5 overflow-y-auto font-mono text-[11px] text-muted-foreground">
-                    {logs.map((l, i) => (
-                      <div key={i}>› {l}</div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div ref={chatEndRef} />
-          </div>
-        </div>
-
-        {/* Input Bar */}
-        <div className="shrink-0 border-t border-border bg-background px-4 py-3">
-          <div className="mx-auto max-w-3xl">
-            {messages.length > 0 && !streaming && (
-              <div className="mb-2 flex gap-1.5 overflow-x-auto pb-1">
-                {SAMPLE_PROMPTS.map((p, i) => (
-                  <button
-                    key={i}
-                    onClick={() => sendQuery(p)}
-                    className="shrink-0 whitespace-nowrap rounded-md border border-border bg-card px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                  >
-                    {p}
+        <div className={`conversation ${turns.length ? "with-turns" : ""}`} ref={conversation} aria-label="Research conversation">
+          {!turns.length ? (
+            <section className="welcome">
+              <div className="hero-mark" aria-hidden="true"><Layers3 size={31} /></div>
+              <h1>Ask your documents.</h1>
+              <p>Find answers in your PDFs and see the passages that support them.</p>
+              <div className="prompt-grid">
+                {prompts.map(({ icon: Icon, title, question: example }) => (
+                  <button className="prompt" key={title} onClick={() => { setQuestion(example); composer.current?.focus(); }}>
+                    <span className="prompt-icon"><Icon size={19} /></span><strong>{title}</strong><span>{example}</span>
                   </button>
                 ))}
               </div>
-            )}
-
-            <div className="flex items-center gap-2 rounded-xl border border-border bg-card shadow-sm transition-all focus-within:border-foreground/20 focus-within:ring-2 focus-within:ring-ring/20">
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendQuery();
-                  }
-                }}
-                placeholder="Ask a question about your documents…"
-                className="flex-1 bg-transparent py-3 pl-4 text-[14px] text-foreground placeholder:text-muted-foreground focus:outline-none"
-                disabled={streaming}
-              />
-              <Button
-                variant="default"
-                size="icon-sm"
-                onClick={() => sendQuery()}
-                disabled={streaming || !input.trim()}
-                className="mr-2 h-8 w-8 rounded-lg"
-                aria-label="Send query"
-              >
-                {streaming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              </Button>
+            </section>
+          ) : (
+            <div className="turns">
+              {turns.map(turn => (
+                <article className="turn" key={turn.id}>
+                  <p className="question">{turn.question}</p>
+                  {turn.answer && <div className="answer">
+                    <h2><span className="answer-mark"><Layers3 size={16} /></span>{turn.answer.final_status === "source_passages" ? "Source passages" : "Answer"}</h2>
+                    {turn.answer.claims.length ? turn.answer.claims.map((claim, index) => (
+                      <p key={claim.claim_id}>{turn.answer?.final_status === "source_passages" ? <q>{claim.claim_text}</q> : claim.claim_text}{" "}
+                        <button className="citation" aria-label={`View source ${index + 1}`} aria-pressed={evidence?.claim_id === claim.claim_id} onClick={() => setEvidence(claim)}>{index + 1}</button>
+                      </p>
+                    )) : <p>{turn.answer.final_answer_text}</p>}
+                    {turn.answer.final_status !== "source_passages" && <small className="answer-status">{turn.answer.final_status.replaceAll("_", " ")}{turn.answer.retry_count ? ` · ${turn.answer.retry_count} correction attempts` : ""}</small>}
+                  </div>}
+                  {turn.error && <p className="error-box" role="alert">{turn.error} <button className="text-action" onClick={() => { setQuestion(turn.question); composer.current?.focus(); }}>Edit and retry</button></p>}
+                  {turn.stopped && <p className="quiet">Query stopped.</p>}
+                </article>
+              ))}
+              {pending && <p className="working" role="status"><LoaderCircle className="spin" size={18} /> {activeStage >= 0 ? stages[activeStage].label : "Connecting…"}</p>}
             </div>
-
-            <p className="mt-2 text-center text-[11px] text-muted-foreground">
-              Responses are verified using DeBERTa-v3 NLI. Claims are automatically scored for
-              factual accuracy — {enableCorrection ? "and corrected when they fail." : "correction loop is off."}
-            </p>
-          </div>
+          )}
         </div>
-      </div>
+
+        <div className="composer-area">
+          <form className="composer" onSubmit={event => { event.preventDefault(); void ask(); }}>
+            <textarea ref={composer} rows={2} maxLength={4000} aria-label="Question" placeholder="Ask a question about your documents…" value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                void ask();
+              }
+            }} />
+            <div className="composer-actions">
+              <label className="scope"><BookOpen size={15} /><select aria-label="Search scope" value={selected?.document_id ?? ""} onChange={event => setScope(event.target.value)}><option value="">All documents</option>{ready.map(doc => <option key={doc.document_id} value={doc.document_id}>{doc.filename}</option>)}</select><ChevronDown size={14} /></label>
+              {pending ? <button className="send" type="button" aria-label="Stop query" onClick={() => request.current?.abort()}><Square size={17} /></button> :
+                <button className="send" type="submit" aria-label="Send question" disabled={!question.trim() || !ready.length || !options}><Send size={18} /></button>}
+            </div>
+          </form>
+          <p className="composer-note">{!ready.length ? "Upload a PDF or try the example to start asking questions." : "Press Enter to send · Shift + Enter for a new line"}</p>
+        </div>
+      </main>
+
+      <aside className={`inspector ${evidence ? "evidence-open" : ""}`} aria-label="Query details">
+        <div className="inspector-header"><h2>{evidence ? "Source passage" : "Query details"}</h2>{evidence && <button className="icon-button" aria-label="Close source passage" onClick={() => setEvidence(undefined)}><X size={19} /></button>}</div>
+        {evidence ? (
+          <div className="evidence">
+            <span className="prompt-icon"><FileText size={20} /></span>
+            <h3>{evidence.filename || "Source document"}</h3>
+            <p className="quiet">{evidence.page_number != null ? `Page ${evidence.page_number}${evidence.page_number_end && evidence.page_number_end !== evidence.page_number ? `–${evidence.page_number_end}` : ""}` : "Page unavailable"}{evidence.verification_status ? ` · ${getClaimStatus(evidence).replaceAll("_", " ")}` : ""}</p>
+            <blockquote>{evidence.source_text || "No source passage was available for this claim."}</blockquote>
+          </div>
+        ) : (
+          <>
+            <div className="pipeline"><h3>Pipeline</h3>
+              {(local ? stages.slice(0, 1) : correction ? stages : stages.slice(0, 3)).map(({ label, icon: Icon, event }, index) => {
+                const visited = events.includes(event);
+                const active = pending && visited && activeStage === index;
+                return <div className={`stage ${visited ? "stage-visited" : ""}`} key={label}><span><Icon size={17} /></span><span>{label}</span>{active ? <LoaderCircle className="spin stage-indicator" size={15} /> : visited && !latest?.error && !latest?.stopped ? <Check className="stage-indicator" size={16} /> : null}</div>;
+              })}
+            </div>
+            <div className="inspector-note"><CircleHelp size={18} /><div><strong>{latest?.answer ? "Result" : "About this workspace"}</strong><p>{latest?.answer
+              ? `${latest.answer.claims.length} cited passages${local ? "" : ` · ${verified} verified claims`} · ${(latest.answer.latency_ms / 1000).toFixed(1)}s`
+              : local ? "Local search returns excerpts from your PDFs with filename and page citations." : "Source citations let you inspect the evidence behind each claim."}</p></div></div>
+          </>
+        )}
+      </aside>
+
+      {removeTarget && <dialog open className="confirm" onKeyDown={event => { if (event.key === "Escape" && !busy) setRemoveTarget(undefined); }}>
+        <h2>Remove document?</h2><p>{removeTarget.filename} will be deleted from this library.</p>
+        <div><button className="sample-button" autoFocus disabled={busy} onClick={() => setRemoveTarget(undefined)}>Cancel</button><button className="danger" disabled={busy} onClick={() => actOnDocument(removeTarget, true)}>Remove</button></div>
+      </dialog>}
     </div>
   );
 }

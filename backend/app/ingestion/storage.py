@@ -14,6 +14,7 @@ Design Notes:
 import json
 import os
 import re
+import shutil
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -188,6 +189,18 @@ class DocumentRegistry:
             len(file_bytes),
         )
         return metadata
+
+    def remove_document(self, document_id: str) -> None:
+        """Remove a registered document and its stored files."""
+        with _REGISTRY_LOCK:
+            current = self._load_registry_unlocked()
+            if document_id not in current:
+                return
+            doc_dir = self.upload_dir / document_id
+            if doc_dir.exists():
+                shutil.rmtree(doc_dir)
+            del current[document_id]
+            self._save_registry_unlocked(current)
 
     def get_document(self, document_id: str) -> DocumentMetadata | None:
         """Retrieve document metadata by document_id."""
