@@ -268,7 +268,7 @@ export async function uploadDocument(file: File): Promise<DocumentUploadResponse
   return (await res.json()) as DocumentUploadResponse;
 }
 
-export async function getOptions(): Promise<{ mode: "local" | "cloud"; max_upload_mb: number }> {
+export async function getOptions(): Promise<{ mode: "local" | "cloud"; max_upload_mb: number; llm_provider: string; llm_model: string }> {
   const res = await fetch(`${API_URL}/api/v1/query/options`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw await parseErrorResponse(res);
   return res.json();

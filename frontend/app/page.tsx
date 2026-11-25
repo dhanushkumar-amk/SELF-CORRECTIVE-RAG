@@ -300,7 +300,7 @@ export default function Home() {
         </div>
         <div className="flex items-center gap-2 border-t border-white/10 pt-4 text-sm text-sidebar-muted">
           <span className={cn("size-2 rounded-full", options ? "bg-emerald-400" : "bg-amber-400")} />
-          {options ? (local ? "Local passage search" : "Cloud verification") : loading ? "Connecting…" : "Service unavailable"}
+          {options ? (local ? "Document chat" : "Cloud verification") : loading ? "Connecting…" : "Service unavailable"}
         </div>
       </div>
     );
@@ -349,10 +349,10 @@ export default function Home() {
           </ol>
         </section>
         <Card className="gap-2 border border-border bg-muted/45 p-4 ring-0">
-          <h3 className="flex items-center gap-2 font-semibold"><CircleHelp className="size-4 text-primary" />{latest?.answer ? "Latest result" : local ? "How passage search works" : "How verification works"}</h3>
+          <h3 className="flex items-center gap-2 font-semibold"><CircleHelp className="size-4 text-primary" />{latest?.answer ? "Latest result" : local ? "Local model" : "How verification works"}</h3>
           <p className="text-sm leading-6 text-muted-foreground">{latest?.answer
             ? `${latest.answer.claims.filter(claim => claim.is_valid_source).length} sources cited${local ? "" : ` · ${verified} verified claims`} · ${(latest.answer.latency_ms / 1000).toFixed(1)}s`
-            : local ? "Groundwork finds matching excerpts and links them to the original PDF page." : "Groundwork checks generated claims against retrieved passages so you can inspect their evidence."}</p>
+            : local ? `Answers are generated on your machine with ${options?.llm_model ?? "the configured Ollama model"}. Matching PDF passages are cited.` : "Groundwork checks generated claims against retrieved passages so you can inspect their evidence."}</p>
         </Card>
       </div>
     );
@@ -382,7 +382,7 @@ export default function Home() {
           </div>
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             {options?.mode === "cloud" && <label className="flex items-center gap-1.5 text-sm"><input className="accent-primary" type="checkbox" checked={correction} disabled={pending} onChange={event => setCorrection(event.target.checked)} /> Self-correction</label>}
-            {local && <Badge variant="secondary" className="hidden h-7 px-2.5 text-sm sm:inline-flex"><FileSearch /> Passage search</Badge>}
+            {local && <Badge variant="secondary" className="hidden h-7 px-2.5 text-sm sm:inline-flex"><Sparkles /> {options?.llm_model}</Badge>}
             <Button variant="ghost" size="icon" aria-label={dark ? "Switch to light theme" : "Switch to dark theme"} onClick={toggleTheme}>{dark ? <Sun /> : <Moon />}</Button>
             <Button variant="ghost" size="icon" className="min-[1200px]:hidden" aria-label="Open query details" onClick={() => setMobileInspector(true)}><PanelRight /></Button>
           </div>
@@ -426,7 +426,7 @@ export default function Home() {
                         {claim.is_valid_source && <Button variant="secondary" size="xs" className="align-middle aria-pressed:bg-primary aria-pressed:text-primary-foreground" aria-label={`View source ${index + 1}`} aria-pressed={evidence?.claim_id === claim.claim_id} onClick={() => openSource(claim)}>{index + 1}</Button>}
                       </p>
                     )) : <p className="text-base">{turn.answer.final_answer_text}</p>}
-                    {turn.answer.final_status !== "source_passages" && <Badge variant="outline" className="h-auto whitespace-normal capitalize">{turn.answer.final_status.replaceAll("_", " ")}{turn.answer.retry_count ? ` · ${turn.answer.retry_count} correction attempts` : ""}</Badge>}
+                    {!["source_passages", "answer"].includes(turn.answer.final_status) && <Badge variant="outline" className="h-auto whitespace-normal capitalize">{turn.answer.final_status.replaceAll("_", " ")}{turn.answer.retry_count ? ` · ${turn.answer.retry_count} correction attempts` : ""}</Badge>}
                   </Card>}
                   {turn.error && <Alert variant="destructive"><AlertDescription>{turn.error} <Button variant="link" onClick={() => { setQuestion(turn.question); composer.current?.focus(); }}>Edit and retry</Button></AlertDescription></Alert>}
                   {turn.stopped && <p className="text-sm text-muted-foreground">Query stopped.</p>}

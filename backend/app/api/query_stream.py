@@ -90,6 +90,18 @@ async def stream_query_execution(
             result = await run_in_threadpool(find_passages, query, document_id)
             chunks = [chunk.model_dump() for chunk in result["retrieved_chunks"]]
             yield _format_sse("retrieval_complete", {"chunk_count": len(chunks), "chunks": chunks})
+            if chunks:
+                local_chunks = [RetrievalResult.model_validate(chunk) for chunk in chunks]
+                generated = await run_in_threadpool(
+                    generate_answer_with_citations, query=query, chunks=local_chunks
+                )
+                claims = map_claims_to_chunks(generated, local_chunks)
+                result = {
+                    **result,
+                    "final_status": "answer" if claims else "unverifiable",
+                    "final_answer_text": " ".join(c.claim_text for c in claims) or "The available passages do not answer this question.",
+                    "claims": claims,
+                }
             yield _format_sse("final_answer", {
                 **result,
                 "retrieved_chunks": chunks,

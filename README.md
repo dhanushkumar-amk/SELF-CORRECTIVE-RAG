@@ -16,6 +16,8 @@ cd SELF-CORRECTIVE-RAG
 docker compose up --build
 ```
 
+Install and start Ollama on your computer, then make sure `ollama list` shows `qwen3:1.7b`. Compose connects to that host Ollama instance, so it uses your existing model without downloading another copy. The uploaded PDFs remain in a named Docker volume. To use another installed model, set `DEFAULT_LOCAL_MODEL` before starting Compose.
+
 1. Open [Groundwork at localhost:3000](http://localhost:3000).
 2. Choose **Try an example PDF** in the library and wait for **Ready**.
 3. Choose **Find a specific detail** and send the budget question. The sample brief lists a pilot budget of **USD 48,000**.
@@ -31,10 +33,10 @@ The [interactive API docs](http://localhost:8000/docs) run on port 8000. Use `do
 | --- | --- | --- |
 | **Use it for** | Exploring PDFs without credentials | Generating cited answers and checking their claims against retrieved evidence |
 | **Retrieval** | Keyword ranking over stored text | Pinecone dense search, BM25, reciprocal rank fusion, and cross-encoder reranking |
-| **Result** | Verbatim excerpts with page citations | Generated claims with citations and verification status |
-| **Requirements** | No provider credentials or model downloads after installation | A Pinecone index, a Groq or Gemini API key, and local model downloads |
+| **Result** | Generated cited answers from the self-hosted Ollama model | Generated claims with citations and verification status |
+| **Requirements** | Ollama model download; no provider credentials | A Pinecone index and local embedding/reranking/verification models; answer generation uses the configured Ollama model by default and needs no cloud key |
 
-Docker Compose and the example backend configuration start in **local** mode. In cloud mode, the **Self-correction** switch controls corrective retries. The verification step still runs when retries are disabled.
+Docker Compose starts in local retrieval mode and uses the self-hosted Ollama model for answer generation. In cloud mode, **Self-correction** controls corrective retries. The verification step still runs when retries are disabled.
 
 ## Cloud verification
 

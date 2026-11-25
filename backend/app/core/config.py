@@ -89,8 +89,11 @@ class Settings(BaseSettings):
     # Groq (Llama / OSS): https://console.groq.com/
     GROQ_API_KEY: str = ""
     DEFAULT_GROQ_MODEL: str = "openai/gpt-oss-120b"
-    LLM_PRIMARY_PROVIDER: str = "groq"
+    LLM_PRIMARY_PROVIDER: str = "local"
     LLM_FALLBACK_PROVIDER: str = "gemini"
+    # OpenAI-compatible local model server (Ollama by default).
+    LLM_LOCAL_BASE_URL: str = "http://localhost:11434/v1"
+    DEFAULT_LOCAL_MODEL: str = "qwen3:1.7b"
 
     # ── Verification & NLI (Phase 33+) ────────────────────────────────────
     NLI_MODEL_NAME: str = "cross-encoder/nli-deberta-v3-base"

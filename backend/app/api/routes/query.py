@@ -34,7 +34,18 @@ router = APIRouter()
 
 @router.get("/options", summary="Get the active query mode and upload limit")
 def query_options() -> dict[str, str | int]:
-    return {"mode": settings.RAG_MODE, "max_upload_mb": settings.MAX_UPLOAD_SIZE_MB}
+    return {
+        "mode": settings.RAG_MODE,
+        "max_upload_mb": settings.MAX_UPLOAD_SIZE_MB,
+        "llm_provider": settings.LLM_PRIMARY_PROVIDER,
+        "llm_model": (
+            settings.DEFAULT_LOCAL_MODEL
+            if settings.LLM_PRIMARY_PROVIDER.lower() in {"local", "ollama"}
+            else settings.DEFAULT_GROQ_MODEL
+            if settings.LLM_PRIMARY_PROVIDER.lower() == "groq"
+            else settings.DEFAULT_GEMINI_MODEL
+        ),
+    }
 
 
 @router.post(
@@ -107,6 +118,24 @@ async def query_rag(request: QueryRequest) -> QueryResponse | StreamingResponse:
     # GenerationError -> 503, unexpected failures -> generic 500 (no leakage).
     if settings.RAG_MODE == "local":
         final_state = await run_in_threadpool(find_passages, request.query, request.document_id)
+        if final_state.get("retrieved_chunks"):
+            from app.generation.generator import generate_answer_with_citations
+            from app.verification.claim_mapper import map_claims_to_chunks
+
+            chunks = final_state["retrieved_chunks"]
+            generated = await run_in_threadpool(
+                generate_answer_with_citations,
+                request.query,
+                chunks,
+            )
+            claims = map_claims_to_chunks(generated, chunks)
+            final_state = {
+                **final_state,
+                "final_status": "answer" if claims else "unverifiable",
+                "final_answer_text": " ".join(c.claim_text for c in claims)
+                or "The available passages do not answer this question.",
+                "claims": claims,
+            }
     else:
         final_state = await run_in_threadpool(app_graph.invoke, initial_state)
     duration_ms = (time.perf_counter() - start_t) * 1000.0

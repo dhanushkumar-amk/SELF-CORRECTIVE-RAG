@@ -10,6 +10,9 @@ services:
       RAG_MODE: ${RAG_MODE:-local}
       UPLOAD_DIR: /data/uploads
       HF_HOME: /data/models
+      LLM_PRIMARY_PROVIDER: ${LLM_PRIMARY_PROVIDER:-local}
+      LLM_LOCAL_BASE_URL: http://host.docker.internal:11434/v1
+      DEFAULT_LOCAL_MODEL: ${DEFAULT_LOCAL_MODEL:-qwen3:1.7b}
     volumes:
       - rag-data:/data
     restart: unless-stopped

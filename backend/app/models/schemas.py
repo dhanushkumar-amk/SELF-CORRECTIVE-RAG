@@ -311,7 +311,7 @@ class LLMResponse(BaseModel):
     """Unified response object returned by the LLM generation provider interface."""
 
     content: str = Field(description="Generated text output from the LLM provider")
-    provider: str = Field(description="Name of provider serving request ('groq' or 'gemini')")
+    provider: str = Field(description="Name of provider serving request ('groq', 'gemini', or 'local')")
     model_name: str = Field(description="Name of specific LLM model executed")
     latency_ms: float = Field(default=0.0, description="Execution duration in milliseconds")
     fallback_triggered: bool = Field(default=False, description="Whether fallback mechanism was triggered")
@@ -332,7 +332,7 @@ class GeneratedAnswer(BaseModel):
     insufficient_information: bool = Field(default=False, description="True if provided chunks do not contain enough info to answer the query")
     unverified_claims: list[Claim] = Field(default_factory=list, description="Claims whose source_chunk_id did not match any input chunk_id")
     raw_response: str | None = Field(default=None, description="Original raw LLM response text before JSON parsing")
-    provider: str | None = Field(default=None, description="LLM provider name ('groq' or 'gemini')")
+    provider: str | None = Field(default=None, description="LLM provider name ('local', 'groq', or 'gemini')")
     model_name: str | None = Field(default=None, description="Name of LLM model executed")
     latency_ms: float = Field(default=0.0, description="Generation latency in milliseconds")
 

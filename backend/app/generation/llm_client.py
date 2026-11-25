@@ -21,6 +21,7 @@ Architecture & Design Decisions:
 from __future__ import annotations
 
 import time
+from time import perf_counter
 from typing import Any
 
 from app.core.config import _is_placeholder, settings
@@ -137,6 +138,40 @@ def generate_gemini(
     )
 
 
+def generate_local(
+    prompt: str,
+    system_prompt: str | None = None,
+    model_name: str | None = None,
+    temperature: float = 0.0,
+) -> LLMResponse:
+    """Generate through an OpenAI-compatible self-hosted server such as Ollama."""
+    if not prompt or not prompt.strip():
+        raise ValueError("Prompt string cannot be empty or whitespace-only.")
+
+    import httpx
+
+    model = model_name or settings.DEFAULT_LOCAL_MODEL
+    messages: list[dict[str, str]] = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+    start = perf_counter()
+    response = httpx.post(
+        f"{settings.LLM_LOCAL_BASE_URL.rstrip('/')}/chat/completions",
+        json={"model": model, "messages": messages, "temperature": temperature},
+        timeout=300.0,
+    )
+    response.raise_for_status()
+    content = response.json()["choices"][0]["message"]["content"] or ""
+    return LLMResponse(
+        content=content,
+        provider="local",
+        model_name=model,
+        latency_ms=round((perf_counter() - start) * 1000, 2),
+        fallback_triggered=False,
+    )
+
+
 def generate_answer(
     prompt: str,
     system_prompt: str | None = None,
@@ -164,6 +199,11 @@ def generate_answer(
         return generate_gemini(prompt, system_prompt, model_name, temperature)
     if force_provider and force_provider.lower() == "groq":
         return generate_groq(prompt, system_prompt, model_name, temperature)
+    if force_provider and force_provider.lower() in {"local", "ollama"}:
+        return generate_local(prompt, system_prompt, model_name, temperature)
+
+    if settings.LLM_PRIMARY_PROVIDER.lower() in {"local", "ollama"}:
+        return generate_local(prompt, system_prompt, model_name, temperature)
 
     # Primary (Groq) -> Fallback (Gemini) execution chain
     try:

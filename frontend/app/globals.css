@@ -256,5 +256,5 @@ body {
 }
 
 @media (min-width: 1440px) {
-  .workspace { grid-template-columns: 17rem minmax(0, 1fr) 18rem; }
+  .workspace { grid-template-columns: 15rem minmax(0, 1fr) 15rem; }
 }
