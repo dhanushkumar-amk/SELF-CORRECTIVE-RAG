@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 
+import threading
 import time
 from typing import Any, Sequence
 
@@ -41,10 +42,6 @@ __all__ = [
 
 # Global singleton BM25 index reference
 _GLOBAL_BM25_INDEX: BM25Index | None = None
-_BM25_LOCK = threading.Lock() if "threading" in globals() else None
-
-import threading
-
 _BM25_LOCK = threading.Lock()
 
 
@@ -200,8 +197,4 @@ def rebuild_bm25_index(registry: DocumentRegistry | None = None) -> BM25Index:
 
     Invoked post-ingestion pipeline completion or on app startup.
     """
-    global _GLOBAL_BM25_INDEX
-    new_index = build_bm25_index(registry)
-    with _BM25_LOCK:
-        _GLOBAL_BM25_INDEX = new_index
-    return new_index
+    return get_bm25_index(registry=registry, force_rebuild=True)

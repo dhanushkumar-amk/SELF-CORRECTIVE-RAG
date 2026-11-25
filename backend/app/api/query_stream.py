@@ -26,6 +26,8 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+from starlette.concurrency import run_in_threadpool
+
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.generation.generator import generate_answer_with_citations
@@ -40,6 +42,7 @@ from app.graph.targeted_retrieve import targeted_retrieve_node
 from app.models.schemas import ClaimWithSource, GeneratedAnswer, RetrievalResult
 from app.reranking.reranker import select_relevant_chunks
 from app.retrieval.hybrid_retriever import hybrid_search
+from app.retrieval.local_passages import find_passages
 from app.verification.claim_mapper import map_claims_to_chunks
 from app.verification.claim_verifier import verify_claims
 
@@ -59,6 +62,7 @@ def _format_sse(event_type: str, payload: dict[str, Any]) -> str:
 async def stream_query_execution(
     query: str,
     document_id: str | None = None,
+    enable_correction: bool = True,
 ) -> AsyncIterator[str]:
     """Execute RAG query through self-correction graph and stream progress as SSE events.
 
@@ -82,9 +86,22 @@ async def stream_query_execution(
             },
         )
 
+        if settings.RAG_MODE == "local":
+            result = await run_in_threadpool(find_passages, query, document_id)
+            chunks = [chunk.model_dump() for chunk in result["retrieved_chunks"]]
+            yield _format_sse("retrieval_complete", {"chunk_count": len(chunks), "chunks": chunks})
+            yield _format_sse("final_answer", {
+                **result,
+                "retrieved_chunks": chunks,
+                "claims": [claim.model_dump() for claim in result["claims"]],
+                "retry_count": 0,
+                "latency_ms": round((time.perf_counter() - start_time) * 1000, 2),
+            })
+            return
+
         filter_dict = {"document_id": document_id} if document_id else None
-        raw_candidates = hybrid_search(query=query, filter=filter_dict)
-        rerank_res = select_relevant_chunks(query=query, candidates=raw_candidates)
+        raw_candidates = await run_in_threadpool(hybrid_search, query=query, filter=filter_dict)
+        rerank_res = await run_in_threadpool(select_relevant_chunks, query=query, candidates=raw_candidates)
         chunks: list[RetrievalResult] = rerank_res.chunks
 
         yield _format_sse(
@@ -112,7 +129,7 @@ async def stream_query_execution(
                 raw_response="No relevant context chunks found.",
             )
         else:
-            generated_answer = generate_answer_with_citations(query=query, chunks=chunks)
+            generated_answer = await run_in_threadpool(generate_answer_with_citations, query=query, chunks=chunks)
 
         yield _format_sse(
             "generation_complete",
@@ -124,7 +141,7 @@ async def stream_query_execution(
 
         # ── 3. VERIFICATION & CORRECTION LOOP ─────────────────────────────
         retry_count = 0
-        max_retries = settings.CORRECTION_MAX_RETRIES
+        max_retries = settings.CORRECTION_MAX_RETRIES if enable_correction else 0
         current_answer: GeneratedAnswer | None = generated_answer
         current_chunks = chunks
         current_claims: list[ClaimWithSource] = []
@@ -146,7 +163,7 @@ async def stream_query_execution(
             else:
                 claims_to_verify = []
 
-            verified_claims = verify_claims(claims_to_verify)
+            verified_claims = await run_in_threadpool(verify_claims, claims_to_verify)
             current_claims = verified_claims
 
             yield _format_sse(
@@ -197,7 +214,8 @@ async def stream_query_execution(
             )
 
             # Targeted retrieve
-            t_res = targeted_retrieve_node(
+            t_res = await run_in_threadpool(
+                targeted_retrieve_node,
                 {
                     "claims": current_claims,
                     "retrieved_chunks": current_chunks,
@@ -208,7 +226,8 @@ async def stream_query_execution(
             retry_count = t_res["retry_count"]
 
             # Partial regenerate
-            r_res = regenerate_node(
+            r_res = await run_in_threadpool(
+                regenerate_node,
                 {
                     "query": query,
                     "claims": current_claims,

@@ -14,10 +14,13 @@ langchain
 langchain-core
 langchain-community
 langgraph
+groq
+google-genai
 
 # ─── Retrieval & Ranking ────────────────────────────────────────────────────
 rank-bm25
 sentence-transformers
+sentencepiece
 
 # ─── Document Processing ────────────────────────────────────────────────────
 pypdf

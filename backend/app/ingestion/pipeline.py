@@ -64,6 +64,10 @@ logger = get_logger(__name__)
 __all__ = ["run_ingestion_pipeline", "verify_document_upsert"]
 
 
+def _local_token_estimate(text: str) -> int:
+    return (len(text) + 3) // 4
+
+
 def _log_retry_attempt(retry_state: Any) -> None:
     """Tenacity callback triggered before sleeping between retry attempts."""
     exc = retry_state.outcome.exception() if retry_state.outcome else None
@@ -219,7 +223,10 @@ def _execute_pipeline_stages(
     )
     t_chunk_start = time.perf_counter()
     try:
-        chunks = chunk_document(document_id=document_id, pages=clean_pages)
+        if settings.RAG_MODE == "local":
+            chunks = chunk_document(document_id, clean_pages, length_function=_local_token_estimate)
+        else:
+            chunks = chunk_document(document_id=document_id, pages=clean_pages)
         if not chunks:
             raise PermanentIngestionError(
                 "failed at chunking: No text chunks generated from cleaned document pages",
@@ -253,6 +260,10 @@ def _execute_pipeline_stages(
         ) from exc
 
     # -------------------------------------------------------------------------
+    # Local passage search indexes persisted text without cloud embeddings.
+    if settings.RAG_MODE == "local":
+        return _complete_ingestion(reg, document_id, chunks, total_tokens, 0, overall_start, stage_timings)
+
     # Stage 4: Embedding Generation
     # -------------------------------------------------------------------------
     reg.update_document_metadata(
@@ -420,6 +431,20 @@ def _execute_pipeline_stages(
     # -------------------------------------------------------------------------
     # Stage 6: Completion & Metric Finalization
     # -------------------------------------------------------------------------
+    return _complete_ingestion(
+        reg, document_id, chunks, total_tokens, upserted_count, overall_start, stage_timings
+    )
+
+
+def _complete_ingestion(
+    reg: DocumentRegistry,
+    document_id: str,
+    chunks: list[Chunk],
+    total_tokens: int,
+    upserted_count: int,
+    overall_start: float,
+    stage_timings: dict[str, float],
+) -> IngestionResult:
     total_time = round(time.perf_counter() - overall_start, 4)
     stage_timings["total_seconds"] = total_time
     logger.info(

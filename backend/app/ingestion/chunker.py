@@ -15,6 +15,7 @@ Design Notes:
   into its neighboring chunk to avoid low-information fragments.
 """
 
+from collections.abc import Callable
 from typing import Any
 import uuid
 
@@ -32,13 +33,9 @@ DEFAULT_CHUNK_OVERLAP_TOKENS = 50
 MIN_CHUNK_TOKENS = 20
 DEFAULT_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 
-# Global tiktoken tokenizer singleton (cl100k_base used across modern OpenAI/LangChain stacks)
-_TOKENIZER = tiktoken.get_encoding("cl100k_base")
-
-
 def get_token_count(text: str) -> int:
     """Return the exact number of tokens in text using the cl100k_base tokenizer."""
-    return len(_TOKENIZER.encode(text))
+    return len(tiktoken.get_encoding("cl100k_base").encode_ordinary(text))
 
 
 class PageSpan:
@@ -112,6 +109,7 @@ def chunk_document(
     chunk_size: int = DEFAULT_CHUNK_SIZE_TOKENS,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP_TOKENS,
     min_chunk_tokens: int = MIN_CHUNK_TOKENS,
+    length_function: Callable[[str], int] = get_token_count,
 ) -> list[Chunk]:
     """Split a list of cleaned pages into semantically cohesive, token-bounded chunks.
 
@@ -139,7 +137,7 @@ def chunk_document(
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,
-        length_function=get_token_count,
+        length_function=length_function,
         separators=DEFAULT_SEPARATORS,
         strip_whitespace=True,
     )
@@ -167,7 +165,7 @@ def chunk_document(
             "text": raw_text,
             "global_start": pos,
             "global_end": end_pos,
-            "token_count": get_token_count(raw_text),
+            "token_count": length_function(raw_text),
         })
         # Advance cursor past start of current chunk to prevent matching identical prefixes
         cursor = pos + 1
@@ -189,7 +187,7 @@ def chunk_document(
             merged_text = concat_text[prev["global_start"]:new_global_end].strip()
             prev["global_end"] = new_global_end
             prev["text"] = merged_text
-            prev["token_count"] = get_token_count(merged_text)
+            prev["token_count"] = length_function(merged_text)
             logger.debug(
                 "Merged tiny chunk (%d tokens) into preceding chunk. New token count: %d",
                 item["token_count"],
@@ -206,7 +204,7 @@ def chunk_document(
         merged_text = concat_text[new_global_start:second["global_end"]].strip()
         second["global_start"] = new_global_start
         second["text"] = merged_text
-        second["token_count"] = get_token_count(merged_text)
+        second["token_count"] = length_function(merged_text)
 
     # 3. Assemble final Chunk instances with projected page numbers & offsets
     final_chunks: list[Chunk] = []

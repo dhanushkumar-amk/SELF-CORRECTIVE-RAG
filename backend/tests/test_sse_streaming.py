@@ -4,6 +4,8 @@ Unit and Integration tests for Phase 43: SSE Real-Time Progress Streaming API.
 
 from unittest.mock import patch
 
+import pytest
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -55,8 +57,9 @@ def test_sse_streaming_event_sequence():
         assert "event: final_answer" in content
 
 
-def test_sse_streaming_correction_triggered():
-    """Verify correction_triggered event is emitted when claim verification fails."""
+@pytest.mark.parametrize("enable_correction", [True, False])
+def test_sse_streaming_correction_triggered(enable_correction):
+    """Run corrective retries only when the query enables them."""
     chunk = RetrievalResult(
         chunk_id="c1",
         score=0.9,
@@ -102,12 +105,12 @@ def test_sse_streaming_correction_triggered():
 
         response = client.post(
             "/api/v1/query",
-            json={"query": "What were the earnings?", "stream": True},
+            json={"query": "What were the earnings?", "stream": True, "enable_correction": enable_correction},
         )
 
         assert response.status_code == 200
         content = response.text
-        assert "event: correction_triggered" in content
+        assert ("event: correction_triggered" in content) == enable_correction
         assert "event: final_answer" in content
 
 

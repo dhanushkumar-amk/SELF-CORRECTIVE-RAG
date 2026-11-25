@@ -2,157 +2,58 @@
 
 A production-grade Retrieval-Augmented Generation system that **detects and self-corrects hallucinations** using a multi-stage verification pipeline powered by LangGraph.
 
-## Quickstart (Local Dev)
+## Run the workspace
 
-### Prerequisites
+With Docker and Docker Compose, start both services from the repository root.
 
-- **Python 3.10+** (developed with Python 3.14.7)
-- **Node.js 18+** (developed with Node 24.20.0)
-- **npm 9+**
-- **Git**
-
-### 1. One-Command Setup & Run (Windows PowerShell)
-
-```powershell
-# Clone the repository
-git clone <repo-url>
-cd self-correcting-rag
-
-# Set up both backend (.venv + deps) and frontend (npm install)
-.\dev.ps1 setup
-
-# Configure environment variables
-Copy-Item backend\.env.example backend\.env
-# Note: In early dev phases, REQUIRE_API_KEYS=false is preset so you can run without API keys
-
-# Start backend dev server (runs at http://localhost:8000)
-.\dev.ps1 backend
-
-# In a separate terminal, start frontend dev server (runs at http://localhost:3000)
-.\dev.ps1 frontend
-
-# Run backend test suite
-.\dev.ps1 test
+```bash
+docker compose up --build
 ```
 
-### 2. Manual Step-by-Step Setup
+Open [Groundwork](http://localhost:3000). Choose **Try an example PDF**, wait for **Ready**, then choose **Find a specific detail** and send the question. Open a numbered citation to see its filename, page, and source text. The API reference is at [localhost:8000/docs](http://localhost:8000/docs). Documents persist in the Compose data volume.
 
-#### Backend Setup
+### Local development
+
+Use Python 3.12 and Node.js 20.9 or later. In one terminal, run:
 
 ```bash
 cd backend
-
-# Create and activate virtual environment
 python -m venv .venv
-# Windows PowerShell:
-.venv\Scripts\Activate.ps1
-# Windows cmd:
-.venv\Scripts\activate.bat
-# macOS/Linux:
 source .venv/bin/activate
-
-# Upgrade pip & install dependencies
-pip install --upgrade pip
 pip install -r requirements.txt
-
-# Set up environment variables
 cp .env.example .env
-
-# Run tests
-pytest tests/ -v
-
-# Start development server
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn app.main:app --reload --port 8000
 ```
-Verify backend: `curl http://127.0.0.1:8000/health` → `{"status":"ok"}`.
 
-#### Frontend Setup
+On PowerShell, activate with `.venv\Scripts\Activate.ps1` and copy with `Copy-Item .env.example .env`. In a second terminal, run:
 
 ```bash
 cd frontend
-
-# Install dependencies cleanly
-npm install
-
-# Set up environment variables (optional, defaults to http://localhost:8000)
-cp .env.local.example .env.local
-
-# Run lint and production build verification
-npm run lint
-npm run build
-
-# Start development server
+npm ci
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-> **macOS/Linux users:** A `Makefile` is also provided — run `make setup`, `make backend`, `make frontend`, and `make test`.
+The browser uses the Next.js proxy by default. Set `BACKEND_URL` in `frontend/.env.local` when your backend is on a different port or host. Set `NEXT_PUBLIC_API_URL` only for a separate browser-accessible API origin and configure the backend's `CORS_ORIGINS` as a JSON array of allowed origins.
 
----
+### Search and verification modes
 
-## Quickstart (Docker)
+- **Local passage search** is the default in Docker Compose and `backend/.env.example`. It returns verbatim PDF excerpts using keyword ranking and shows the matching pages. It works without API keys or model downloads after dependency installation.
+- **Cloud verification** uses Pinecone and Groq or Gemini to retrieve evidence and generate answers, then runs local reranking and NLI verification. Set `RAG_MODE=cloud`, `REQUIRE_API_KEYS=true`, and configure `PINECONE_API_KEY` plus at least one of `GROQ_API_KEY` or `GEMINI_API_KEY` in `backend/.env`. For Compose, also set `RAG_MODE=cloud` in the shell when starting it. The first cloud-mode ingestion or query can download Hugging Face models. Re-index PDFs previously processed in local mode to populate the cloud vector index.
 
-To run the entire system (FastAPI backend + Next.js frontend) in isolated Docker containers:
+| Setting | Purpose |
+| --- | --- |
+| `PINECONE_INDEX_NAME`, `PINECONE_ENVIRONMENT` | Target index and region. Defaults are `self-correcting-rag` and `us-east-1`. |
+| `MAX_UPLOAD_SIZE_MB`, `UPLOAD_DIR` | PDF upload limit (20 MB) and local storage directory. |
+| `RATE_LIMIT_ENABLED`, `RATE_LIMIT_QUERY_PER_MINUTE` | Per-client query rate limit (10 per minute by default). |
+| `CORRECTION_MAX_RETRIES` | Maximum corrective passes in cloud mode (2 by default). |
+| `ENVIRONMENT`, `LOG_LEVEL` | Runtime environment and logging level. |
+| `LANGCHAIN_TRACING_V2`, `LANGCHAIN_API_KEY` | Optional LangSmith tracing. |
 
-### Prerequisites
-- Docker Engine & Docker Compose (Docker Desktop on Windows/macOS)
+The Compose setup binds both services to localhost and uses a single backend process with a shared document library.
 
-### Launch Services
+### Checks
 
-```bash
-# Build and start all services in the background
-docker-compose up --build -d
-
-# Check running status
-docker-compose ps
-
-# View live container logs
-docker-compose logs -f
-
-# Shut down services and clean up networks
-docker-compose down
-```
-
-Services will be accessible at:
-- **Backend API:** [http://localhost:8000](http://localhost:8000) (Docs: [http://localhost:8000/docs](http://localhost:8000/docs))
-- **Frontend App:** [http://localhost:3000](http://localhost:3000)
-
----
-
-## Environment Variables Reference
-
-### Backend Variables (`backend/.env`)
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `REQUIRE_API_KEYS` | No | `true` | When `false`, skips fail-fast API key checks (used for local scaffolding / CI) |
-| `PINECONE_API_KEY` | **Yes** (Phase 3+) | `None` | Pinecone vector database API key (`pcsk_...`) |
-| `PINECONE_INDEX_NAME` | **Yes** (Phase 3+) | `self-correcting-rag` | Target Pinecone vector index name |
-| `PINECONE_ENVIRONMENT` | **Yes** (Phase 3+) | `us-east-1` | Pinecone cloud region/environment |
-| `ENVIRONMENT` | No | `development` | Deployment environment: `development`, `staging`, `production`, `test` |
-| `LOG_LEVEL` | No | `INFO` | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
-| `GEMINI_API_KEY` | Phase 25+ | `None` | Google Gemini API key (for answer generation) |
-| `GROQ_API_KEY` | Phase 25+ | `None` | Groq API key for low-latency Llama-3 generation |
-| `API_V1_PREFIX` | No | `/api/v1` | URL prefix for REST API version 1 |
-| `CORS_ORIGINS` | No | `http://localhost:3000` | Comma-separated list of allowed CORS origins |
-| `LANGCHAIN_TRACING_V2` | No | `false` | Set to `true` to enable LangSmith telemetry and state-graph tracing |
-| `LANGCHAIN_API_KEY` | Optional | `None` | LangSmith API key (required if tracing is enabled) |
-| `LANGCHAIN_PROJECT` | No | `self-correcting-rag` | LangSmith project name to log traces under |
-| `LANGCHAIN_ENDPOINT` | No | `https://api.smith.langchain.com` | LangSmith API endpoint |
-| `UPLOAD_DIR` | No | `uploads` | Local directory for raw PDF uploads and document registry |
-| `MAX_UPLOAD_SIZE_MB` | No | `20` | Maximum allowed file upload size in megabytes |
-| `RATE_LIMIT_ENABLED` | No | `true` | When `true`, enforces the per-minute query rate limit on `/api/v1/query` |
-| `RATE_LIMIT_QUERY_PER_MINUTE` | No | `10` | Maximum queries per minute per client IP; exceeded requests get HTTP 429 + `Retry-After` |
-
-*\*At least one LLM API key (`GEMINI_API_KEY` or `GROQ_API_KEY`) is required in production when `REQUIRE_API_KEYS=true`.*
-
-### Frontend Variables (`frontend/.env.local`)
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | No | `http://localhost:8000` | Backend API base URL accessible from browser client |
-
----
+From `backend/`, run `REQUIRE_API_KEYS=false RAG_MODE=cloud python -m pytest tests`. Some model integration tests require Hugging Face downloads, and live Pinecone tests require credentials. From `frontend/`, run `npm run lint` and `npm run build`.
 
 ## API Standards & Rate Limiting
 
@@ -190,7 +91,7 @@ Services will be accessible at:
 
 | Layer         | Technology                                    |
 | ------------- | --------------------------------------------- |
-| Frontend      | Next.js 14+ (App Router), TypeScript, Tailwind CSS, shadcn/ui |
+| Frontend      | Next.js 16 (App Router), TypeScript, Tailwind CSS |
 | Backend       | Python, FastAPI                               |
 | Orchestration | LangChain + LangGraph                        |
 | Vector DB     | Pinecone (managed)                            |
@@ -309,7 +210,10 @@ self-correcting-rag/
 
 > 📡 **Backend API Layer (Phases 42–45) complete** — consolidated public API models (`api_models.py`), explicit error→status mapping, request-ID tracing, and per-client rate limiting are in place. Frontend UI & Citation Display next (Phases 46–48)!
 
-### Phase 44–46 — Frontend & Citation UI
+### Phase 46 — Frontend & Citation UI
+
+- [x] Responsive research workspace, PDF library, indexing status, and cited answers
+- [x] Streamed query progress, source inspection, and a bundled example PDF
 
 ### Phase 47–50 — Polish & Production
 - [ ] **Phase 47:** Performance optimization & caching

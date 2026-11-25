@@ -7,10 +7,10 @@ Phase 6: File reception, magic byte validation, storage, and registry tracking.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile, status
+from starlette.concurrency import run_in_threadpool
 
 from pathlib import Path
-import threading
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -483,48 +483,51 @@ async def process_document_endpoint(
     - Clients can poll `GET /api/ingest/{document_id}/status` to track progress.
     - If `sync=True`, blocks and returns the completed IngestionResult synchronously.
     """
+    return await _start_processing(document_id, background_tasks, sync)
+
+
+_active_documents: set[str] = set()
+
+
+async def _start_processing(
+    document_id: str, background_tasks: BackgroundTasks, sync: bool, retry: bool = False
+) -> IngestionResult:
     registry = get_document_registry()
     doc = registry.get_document(document_id)
-    if not doc:
-        logger.warning("Process requested for nonexistent document ID: %s", document_id)
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Document with ID '{document_id}' not found.",
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    if document_id in _active_documents:
+        raise HTTPException(status_code=409, detail="This document already has an operation in progress.")
+    if retry and doc.retryable is False:
+        raise HTTPException(status_code=400, detail=f"This document permanently failed and cannot be retried: {doc.failure_reason}")
+
+    _active_documents.add(document_id)
+    try:
+        registry.update_document_metadata(
+            document_id, status=DocumentStatus.PROCESSING,
+            current_stage="extracting", failure_reason=None,
         )
+    except Exception:
+        _active_documents.discard(document_id)
+        raise
+
+    async def execute() -> IngestionResult:
+        try:
+            return await run_in_threadpool(run_ingestion_pipeline, document_id)
+        finally:
+            _active_documents.discard(document_id)
 
     if sync:
-        logger.info("Executing synchronous ingestion pipeline for document %s...", document_id)
-        result = run_ingestion_pipeline(document_id)
-        return result
+        return await execute()
 
-    # Update status to processing immediately so initial poll sees 'processing'
-    registry.update_document_metadata(
-        document_id,
-        status=DocumentStatus.PROCESSING,
-        current_stage="extracting",
-        failure_reason=None,
-    )
-
-    def _execute_in_background(doc_id: str) -> None:
-        worker = threading.Thread(
-            target=run_ingestion_pipeline,
-            args=(doc_id,),
-            daemon=True,
-            name=f"ingestion-pipeline-{doc_id}",
-        )
-        worker.start()
-
-    background_tasks.add_task(_execute_in_background, document_id)
-
+    background_tasks.add_task(execute)
     return IngestionResult(
         document_id=document_id,
         status=DocumentStatus.PROCESSING,
         current_stage="extracting",
         chunk_count=0,
         total_tokens=0,
-        processing_time_seconds=0.0,
-        failure_reason=None,
-        stage_timings={},
+        processing_time_seconds=0,
     )
 
 
@@ -629,65 +632,37 @@ async def retry_document_endpoint(
     2. Rejects request with HTTP 400 if document is permanently failed (retryable is False).
     3. Purges any pre-existing vectors for document_id from Pinecone before re-running.
     """
+    return await _start_processing(document_id, background_tasks, sync, retry=True)
+
+
+@router.delete("/{document_id}", status_code=204, summary="Remove a document and its indexed passages")
+async def delete_document(document_id: str) -> Response:
     registry = get_document_registry()
     doc = registry.get_document(document_id)
-    if not doc:
-        logger.warning("Retry requested for nonexistent document ID: %s", document_id)
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Document with ID '{document_id}' not found.",
-        )
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+    if document_id in _active_documents:
+        raise HTTPException(status_code=409, detail="Wait for the current document operation to finish.")
 
-    if doc.retryable is False:
-        logger.warning("Retry rejected for permanently failed document ID: %s", document_id)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Document '{document_id}' permanently failed ({doc.failure_reason}) and cannot be retried.",
-        )
-
-    # Re-enforce idempotency: purge any partial vectors from pre-existing attempt
-    try:
+    def remove() -> None:
         from app.retrieval import get_pinecone_client
-        pc_client = get_pinecone_client()
-        pc_client.delete_vectors(filter={"document_id": document_id})
-    except Exception as exc:
-        logger.warning("Pre-retry vector cleanup encountered exception for doc '%s': %s", document_id, exc)
+        from app.retrieval.bm25_index import rebuild_bm25_index
 
-    if sync:
-        logger.info("Executing synchronous retry ingestion pipeline for document %s...", document_id)
-        result = run_ingestion_pipeline(document_id)
-        return result
+        if settings.RAG_MODE == "cloud" and (
+            doc.upserted_count or doc.status in (DocumentStatus.PROCESSING, DocumentStatus.FAILED)
+        ):
+            try:
+                get_pinecone_client().delete_vectors(filter={"document_id": document_id})
+            except Exception as exc:
+                logger.exception("Could not delete vectors for document %s", document_id)
+                raise HTTPException(status_code=503, detail="Could not remove indexed vectors. Try again.") from exc
 
-    registry.update_document_metadata(
-        document_id,
-        status=DocumentStatus.PROCESSING,
-        current_stage="extracting",
-        failure_reason=None,
-    )
+        registry.remove_document(document_id)
+        rebuild_bm25_index(registry)
 
-    def _execute_in_background(doc_id: str) -> None:
-        worker = threading.Thread(
-            target=run_ingestion_pipeline,
-            args=(doc_id,),
-            daemon=True,
-            name=f"ingestion-pipeline-retry-{doc_id}",
-        )
-        worker.start()
-
-    background_tasks.add_task(_execute_in_background, document_id)
-
-    return IngestionResult(
-        document_id=document_id,
-        status=DocumentStatus.PROCESSING,
-        current_stage="extracting",
-        chunk_count=0,
-        total_tokens=0,
-        processing_time_seconds=0.0,
-        failure_reason=None,
-        retryable=True,
-        stage_timings={},
-    )
-
-
-
-
+    _active_documents.add(document_id)
+    try:
+        await run_in_threadpool(remove)
+    finally:
+        _active_documents.discard(document_id)
+    return Response(status_code=204)
