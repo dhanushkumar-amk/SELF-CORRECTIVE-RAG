@@ -90,7 +90,7 @@ async def stream_query_execution(
             result = await run_in_threadpool(find_passages, query, document_id)
             chunks = [chunk.model_dump() for chunk in result["retrieved_chunks"]]
             yield _format_sse("retrieval_complete", {"chunk_count": len(chunks), "chunks": chunks})
-            if chunks:
+            if chunks and result["final_status"] != "answer":
                 local_chunks = [RetrievalResult.model_validate(chunk) for chunk in chunks]
                 generated = await run_in_threadpool(
                     generate_answer_with_citations, query=query, chunks=local_chunks

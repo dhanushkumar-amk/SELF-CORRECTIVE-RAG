@@ -422,7 +422,7 @@ export default function Home() {
                   {turn.answer && <Card className="gap-3 border border-border p-4 ring-0 sm:p-5">
                     <h2 className="flex items-center gap-2.5 text-base font-semibold"><span className="feature-icon"><Layers3 /></span>{turn.answer.final_status === "source_passages" ? "Source passages" : "Answer"}</h2>
                     {turn.answer.claims.length ? turn.answer.claims.map((claim, index) => (
-                      <p className="break-words text-[0.9375rem] leading-relaxed" key={claim.claim_id}>{turn.answer?.final_status === "source_passages" ? <q>{claim.claim_text}</q> : claim.claim_text}{" "}
+                      <p className="whitespace-pre-line break-words text-[0.9375rem] leading-relaxed" key={claim.claim_id}>{turn.answer?.final_status === "source_passages" ? <q>{claim.claim_text}</q> : claim.claim_text}{" "}
                         {claim.is_valid_source && <Button variant="secondary" size="xs" className="align-middle aria-pressed:bg-primary aria-pressed:text-primary-foreground" aria-label={`View source ${index + 1}`} aria-pressed={evidence?.claim_id === claim.claim_id} onClick={() => openSource(claim)}>{index + 1}</Button>}
                       </p>
                     )) : <p className="text-base">{turn.answer.final_answer_text}</p>}

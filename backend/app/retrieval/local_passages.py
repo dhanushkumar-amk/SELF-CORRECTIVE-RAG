@@ -33,6 +33,20 @@ def find_passages(query: str, document_id: str | None = None) -> dict[str, Any]:
             if document_id and metadata["document_id"] != document_id:
                 continue
             source = metadata["source_text"]
+            if "ai" in terms and terms.intersection({"skill", "skills"}) and not terms.intersection({"explain", "compare", "missing", "improve", "why", "backend", "frontend"}):
+                section = re.search(
+                    r"\b(?:AI\s*(?:&|and)\s*Generative AI|AI Skills)\s*:\s*(.+?)"
+                    r"(?=\s+(?:Frontend|Backend|Databases|DevOps|Education|Experience)\s*:|\n\s*\n)",
+                    source, re.I | re.S,
+                )
+                if section and document_id:
+                    skills = [item.strip() for item in section[1].split(",") if item.strip()]
+                    answer = "\n".join(f"? {skill}" for skill in dict.fromkeys(skills))
+                    claim = ClaimWithSource(claim_text=answer, source_chunk_id=match["id"],
+                        source_text=section[0], page_number=metadata["page_number"],
+                        document_id=document_id, filename=metadata.get("filename"), is_valid_source=True)
+                    return {"final_status": "answer", "final_answer_text": answer, "claims": [claim],
+                            "retrieved_chunks": [RetrievalResult(chunk_id=match["id"], score=match["score"], metadata=metadata)]}
             if internship_query:
                 role = re.search(r"\bintern(?:ship)?\b", source, re.I)
                 if role:

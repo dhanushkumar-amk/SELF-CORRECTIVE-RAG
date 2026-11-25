@@ -118,7 +118,7 @@ async def query_rag(request: QueryRequest) -> QueryResponse | StreamingResponse:
     # GenerationError -> 503, unexpected failures -> generic 500 (no leakage).
     if settings.RAG_MODE == "local":
         final_state = await run_in_threadpool(find_passages, request.query, request.document_id)
-        if final_state.get("retrieved_chunks"):
+        if final_state.get("retrieved_chunks") and final_state["final_status"] != "answer":
             from app.generation.generator import generate_answer_with_citations
             from app.verification.claim_mapper import map_claims_to_chunks
 
