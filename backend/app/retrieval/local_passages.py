@@ -33,7 +33,10 @@ def find_passages(query: str, document_id: str | None = None) -> dict[str, Any]:
     claims = []
     chunks = {}
     seen = set()
-    for _, score, chunk_id, passage, metadata in candidates:
+    min_overlap = (candidates[0][0] + 1) // 2 if candidates else 0
+    for overlap, score, chunk_id, passage, metadata in candidates:
+        if overlap < min_overlap:
+            break
         if passage in seen:
             continue
         seen.add(passage)

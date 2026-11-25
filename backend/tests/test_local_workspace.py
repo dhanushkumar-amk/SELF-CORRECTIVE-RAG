@@ -3,16 +3,17 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.core.config import settings
-from app.ingestion.storage import reset_document_registry
+from app.ingestion import storage
 from app.main import app
-from app.retrieval.bm25_index import rebuild_bm25_index
+from app.retrieval import bm25_index
 
 
 def test_local_pdf_workspace_without_cloud_credentials(monkeypatch, tmp_path):
     with monkeypatch.context() as config:
         config.setattr(settings, "RAG_MODE", "local")
         config.setattr(settings, "UPLOAD_DIR", str(tmp_path))
-        reset_document_registry()
+        config.setattr(storage, "_registry_instance", None)
+        config.setattr(bm25_index, "_GLOBAL_BM25_INDEX", None)
         sample = Path(__file__).resolve().parents[2] / "frontend/public/project-brief.pdf"
         with TestClient(app) as client:
             assert client.get("/api/v1/query/options").json()["mode"] == "local"
@@ -43,6 +44,3 @@ def test_local_pdf_workspace_without_cloud_credentials(monkeypatch, tmp_path):
             assert client.delete(document_url).status_code == 204
             assert client.get(document_url).status_code == 404
             assert client.post("/api/v1/query", json={**query, "stream": False}).json()["claims"] == []
-
-    reset_document_registry()
-    rebuild_bm25_index()

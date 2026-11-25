@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
@@ -40,6 +40,20 @@ def isolated_upload_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path
     reset_document_registry()
     yield upload_dir
     reset_document_registry()
+
+
+@pytest.fixture(autouse=True)
+def stub_pinecone(monkeypatch: pytest.MonkeyPatch) -> None:
+    vectors = {}
+
+    def upsert(batch, batch_size):
+        vectors.update({vector["id"]: vector for vector in batch})
+        return {"upserted_count": len(batch)}
+
+    client = Mock()
+    client.upsert_vectors.side_effect = upsert
+    client.fetch_vectors.side_effect = lambda ids: {key: vectors[key] for key in ids}
+    monkeypatch.setattr("app.ingestion.pipeline.get_pinecone_client", lambda: client)
 
 
 class TestIngestionPipelineUnit:

@@ -7,7 +7,7 @@ from unittest.mock import patch
 from app.core.config import settings
 from app.graph.graph import app_graph
 from app.graph.state import RAGState
-from app.models.schemas import ClaimWithSource, GeneratedAnswer, RetrievalResult, VerificationStatus
+from app.models.schemas import Claim, ClaimWithSource, GeneratedAnswer, RetrievalResult, VerificationStatus
 
 
 def test_retry_cap_prevents_infinite_loop_on_persistent_failure():
@@ -39,6 +39,7 @@ def test_retry_cap_prevents_infinite_loop_on_persistent_failure():
     # Mock nodes so verify_node ALWAYS returns the failed claim
     with patch("app.graph.graph.hybrid_search") as mock_hybrid, \
          patch("app.graph.graph.select_relevant_chunks") as mock_rerank, \
+         patch("app.graph.graph.generate_answer_with_citations") as mock_generate, \
          patch("app.graph.graph.verify_claims") as mock_verify, \
          patch("app.graph.targeted_retrieve.hybrid_search") as mock_targeted_hybrid, \
          patch("app.graph.targeted_retrieve.select_relevant_chunks") as mock_targeted_rerank, \
@@ -51,6 +52,9 @@ def test_retry_cap_prevents_infinite_loop_on_persistent_failure():
         mock_targeted_rerank.return_value = type("RerankRes", (), {"chunks": [chunk]})()
 
         # Always return the CONTRADICTED claim to simulate persistent failure across retries
+        mock_generate.return_value = GeneratedAnswer(
+            claims=[Claim(claim_text=persistent_failed_claim.claim_text, source_chunk_id=chunk.chunk_id)],
+        )
         mock_verify.return_value = [persistent_failed_claim]
         mock_regen.return_value = []
 

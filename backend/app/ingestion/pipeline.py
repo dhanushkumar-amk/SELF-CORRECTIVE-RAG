@@ -32,7 +32,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from app.core.config import get_settings
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.ingestion.chunk_metadata import create_vector_id
 from app.ingestion.chunker import chunk_document
@@ -111,7 +111,6 @@ def _execute_pipeline_stages(
     Only retries when TransientIngestionError is raised. PermanentIngestionError causes
     immediate termination without retry.
     """
-    settings = get_settings()
     stage_timings: dict[str, float] = {}
     overall_start = time.perf_counter()
 
